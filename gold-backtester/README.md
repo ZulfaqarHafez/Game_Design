@@ -33,10 +33,17 @@ python -m goldlab validate donchian_breakout_4h --grid entry_len=40,55,70 exit_l
 python -m goldlab pine london_breakout_15m --out london.pine   # paste into TradingView to compare
 ```
 
-Hourly gold data for Jan 2019 to Sep 2026 is included (`data/sample/`, real bid/ask spreads), so this
-works offline. Hourly data also builds 4h and daily bars. `python -m goldlab data --tf 1h --start 2024-01-01`
-refreshes data from Dukascopy. The server throttles hard, so downloads are slow, cached, and resume
-where they stopped.
+Sample gold data is included in `data/sample/`, so this works offline:
+
+| File | Covers | Notes |
+|---|---|---|
+| `XAUUSD_1h.csv.gz` | Jan 2019 – Sep 2026 | Dukascopy bid prices with real bid/ask spread; also builds 2h, 4h, daily and weekly bars |
+| `XAUUSD_15m.csv.gz` | Jan 2025 – 3 May 2026 | built from Dukascopy 1-minute bid prices; spread taken from the hourly bid/ask data |
+| `XAUUSD_5m.csv.gz` | Jan 2025 – 3 May 2026 | same source as the 15m file |
+
+`python -m goldlab data --tf 1h --start 2024-01-01` refreshes data from Dukascopy. The server throttles
+hard (HTTP 429, and sometimes refuses connections for a while), so downloads are slow, cached under
+`data/cache/`, and resume where they stopped when you run the command again.
 
 ## Capturing your strategies
 

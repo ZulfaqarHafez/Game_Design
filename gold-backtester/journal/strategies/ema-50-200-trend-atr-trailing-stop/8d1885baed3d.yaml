@@ -1,6 +1,6 @@
 name: EMA 50/200 trend, ATR trailing stop
 fingerprint: 8d1885baed3d
-first_seen: '2026-10-25T06:03:31.209078+00:00'
+first_seen: '2026-10-25T07:56:54.665554+00:00'
 kind: card
 description: Classic trend following. Go long when the 50 EMA crosses above the 200
   EMA, short when it crosses below. A 3x ATR stop trails behind the best price. The

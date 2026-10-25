@@ -15,4 +15,4 @@ Donchian 55/20 breakout (Turtle-style) | XAUUSD 4h | 2019-01-01 -> 2026-09-30 | 
   Commission paid                    37.10
   Overnight swap paid                1,239.45
   Time in market %                   52.52%
-  Orders skipped (too small)         1524
+  Orders skipped (too small)         20

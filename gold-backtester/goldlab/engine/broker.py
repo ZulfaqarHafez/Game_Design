@@ -176,6 +176,7 @@ class Broker:
         self.closes: list[CloseOrder] = []
         self.events: list[dict] = []
         self.placed: list[tuple] = []             # every order the strategy placed: (bar, kind, id, ...)
+        self._last_reject: dict[str, int] = {}
         self._tid = 0
         self.bar = -1
         self.cur_spread = 0.0
@@ -265,9 +266,10 @@ class Broker:
     def entry(self, id: str, side: int, qty: float, limit=None, stop=None, comment="", oca=None,
               bracket: dict | None = None):
         if qty < self.s.min_qty:
-            if id not in self.entries and not any(e["kind"] == "rejected" and e.get("order") == id
-                                                  and e["bar"] == self.bar - 1 for e in self.events[-3:]):
+            # count a signal once, even when the strategy re-sends it on consecutive bars
+            if self._last_reject.get(id) != self.bar - 1:
                 self._log("rejected", order=id, reason="size below the minimum (0.01 lot); risk % too small for the stop")
+            self._last_reject[id] = self.bar
             self.entries.pop(id, None)
             return
         if limit is not None and stop is not None:

@@ -1,6 +1,6 @@
 name: RSI(2) pullback with 200 SMA trend filter
 fingerprint: 5a732b7a713f
-first_seen: '2026-10-25T06:03:35.713811+00:00'
+first_seen: '2026-10-25T07:56:59.253670+00:00'
 kind: card
 description: 'Buy short, sharp dips inside an uptrend: long when RSI(2) drops below
   10 while price is above its 200 SMA; mirror for shorts. Exit on a close back above

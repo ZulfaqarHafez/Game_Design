@@ -15,4 +15,4 @@ RSI(2) pullback with 200 SMA trend filter | XAUUSD 1h | 2019-01-01 -> 2026-09-30
   Commission paid                    573.58
   Overnight swap paid                248.05
   Time in market %                   13.37%
-  Orders skipped (too small)         295
+  Orders skipped (too small)         244

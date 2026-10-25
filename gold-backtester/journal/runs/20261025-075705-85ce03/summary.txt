@@ -1,0 +1,18 @@
+New York (COMEX) opening range breakout | XAUUSD 5m | 2025-01-01 -> 2026-05-03 | 94,329 bars
+  Net profit                         -334.82
+  Net profit %                       -3.35%
+  Total closed trades                324
+  Percent profitable                 35.19%
+  Profit factor                      0.964
+  Max equity drawdown (intrabar)     1,410.01
+  Max equity drawdown %              13.54%
+  Avg trade                          -1.03
+  Ratio avg win / avg loss           1.775
+  Sharpe ratio                       -0.145
+  Sortino ratio                      -0.180
+  CAGR %                             -2.60%
+  Buy & hold return %                74.69%
+  Commission paid                    124.11
+  Overnight swap paid                10.40
+  Time in market %                   5.95%
+  Orders skipped (too small)         26

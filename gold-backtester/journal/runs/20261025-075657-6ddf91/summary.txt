@@ -15,4 +15,4 @@ Time-series momentum (1/3/12 month blend) | XAUUSD 1d | 2019-01-02 -> 2026-10-01
   Commission paid                    9.59
   Overnight swap paid                573.85
   Time in market %                   64.22%
-  Orders skipped (too small)         307
+  Orders skipped (too small)         34

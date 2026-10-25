@@ -1,6 +1,6 @@
 name: Donchian 55/20 breakout (Turtle-style)
 fingerprint: e1132058b25a
-first_seen: '2026-10-25T06:03:32.653918+00:00'
+first_seen: '2026-10-25T07:56:56.073172+00:00'
 kind: card
 description: Buy a break of the 55-bar high, sell a break of the 55-bar low (stop
   orders, so the fill happens on the break, not the next bar). Exit when price makes

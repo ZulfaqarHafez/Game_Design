@@ -1,0 +1,18 @@
+Asian range, London breakout | XAUUSD 15m | 2025-01-01 -> 2026-05-03 | 31,446 bars
+  Net profit                         -441.81
+  Net profit %                       -4.42%
+  Total closed trades                128
+  Percent profitable                 46.09%
+  Profit factor                      0.798
+  Max equity drawdown (intrabar)     594.73
+  Max equity drawdown %              5.89%
+  Avg trade                          -3.45
+  Ratio avg win / avg loss           0.933
+  Sharpe ratio                       -0.495
+  Sortino ratio                      -0.491
+  CAGR %                             -3.33%
+  Buy & hold return %                67.23%
+  Commission paid                    14.91
+  Overnight swap paid                0.45
+  Time in market %                   16.48%
+  Orders skipped (too small)         219

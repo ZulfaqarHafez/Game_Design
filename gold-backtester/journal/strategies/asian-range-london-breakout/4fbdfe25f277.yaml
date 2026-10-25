@@ -1,0 +1,61 @@
+name: Asian range, London breakout
+fingerprint: 4fbdfe25f277
+first_seen: '2026-10-25T07:57:02.731277+00:00'
+kind: card
+description: Mark the high and low of the Asian session (00:00-07:00 London time).
+  From 07:00 to 11:00 London, place a buy stop just above the range and a sell stop
+  just below it. Skip days where the range is unusually small or large versus the
+  daily ATR. Stop at the other side of the range, target 1.5R, one trade a day, and
+  flat by 17:00 New York.
+---
+name: Asian range, London breakout
+description: 'Mark the high and low of the Asian session (00:00-07:00 London time).
+  From 07:00 to 11:00 London, place a buy stop just above the range and a sell stop
+  just below it. Skip days where the range is unusually small or large versus the
+  daily ATR. Stop at the other side of the range, target 1.5R, one trade a day, and
+  flat by 17:00 New York.
+
+  '
+timeframe: 15m
+symbol: XAUUSD
+tags:
+- breakout
+- session
+- intraday
+evidence: Folklore. Only a blog backtest (profit factor ~1.38) was found; no peer-reviewed
+  evidence.
+params:
+  buffer_atr: 0.1
+  min_range_atr: 0.3
+  max_range_atr: 1.2
+  target_r: 1.5
+vars:
+  asia_hi: session_high("00:00-07:00", "Europe/London")
+  asia_lo: session_low("00:00-07:00", "Europe/London")
+  rng: asia_hi - asia_lo
+  daily_atr: security("1d", "atr(14)")
+  buf: buffer_atr * atr(14)
+  window: in_session("07:00-11:00", "Europe/London")
+  range_ok: rng > min_range_atr * daily_atr and rng < max_range_atr * daily_atr
+  setup: window and range_ok and is_flat and trades_today == 0
+long:
+  when: setup and close < asia_hi + buf
+  order: stop
+  price: asia_hi + buf
+  sl: asia_lo - buf
+  tp_r: target_r
+short:
+  when: setup and close > asia_lo - buf
+  order: stop
+  price: asia_lo - buf
+  sl: asia_hi + buf
+  tp_r: target_r
+exit:
+  when: in_session("16:30-16:45", "America/New_York")
+plots:
+  Asian high: asia_hi
+  Asian low: asia_lo
+oca_entries: true
+settings:
+  qty_type: risk_percent
+  qty_value: 0.5
