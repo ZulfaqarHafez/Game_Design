@@ -49,14 +49,93 @@
 
 <main class="layout">
   <section class="chart-area" aria-label="Price chart">
-    <div class="legend" id="legend"></div>
-    <div id="chart"></div>
-    <div class="overlay" id="overlay" hidden><span id="overlay-text">Running backtest…</span></div>
-    <div class="trade-nav" id="trade-nav" hidden>
-      <button class="btn" id="prev-trade" type="button" aria-label="Previous trade">‹</button>
-      <span id="trade-nav-label" aria-live="polite"></span>
-      <button class="btn" id="next-trade" type="button" aria-label="Next trade">›</button>
-      <button class="btn ghost" id="close-trade" type="button" aria-label="Clear selected trade">✕</button>
+    <div class="chart-head" role="toolbar" aria-label="Chart tools">
+      <button class="btn small" id="ind-btn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 5-8 4 5"/></g></svg>Indicators</button>
+      <button class="btn small draw-toggle" id="draw-toggle" type="button" aria-expanded="false" aria-controls="draw-rail"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></g></svg>Draw</button>
+      <button class="btn small replay-btn" id="replay-btn" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M8 6l11 6-11 6z"/></g></svg>Replay</button>
+      <button class="btn small ghost" id="sessions-btn" type="button" aria-haspopup="dialog">My sessions</button>
+      <span class="head-sep" aria-hidden="true"></span>
+      <button class="btn small ghost icon-only" id="magnet" type="button" aria-pressed="false" aria-label="Magnet: snap drawings to candle prices" title="Magnet: snap drawings to open, high, low, close"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v7a6 6 0 0012 0V4h-4v7a2 2 0 01-4 0V4z"/><path d="M6 8h4M14 8h4"/></g></svg></button>
+      <button class="btn small ghost icon-only" id="undo-draw" type="button" aria-label="Undo drawing change (Ctrl+Z)" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></g></svg></button>
+      <button class="btn small ghost icon-only" id="clear-draw" type="button" aria-label="Remove all drawings" title="Remove all drawings"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></g></svg></button>
+      <div class="sel-tools" id="sel-tools" hidden>
+        <span id="sel-name"></span>
+        <span class="swatches" id="sel-colors" role="group" aria-label="Colour"></span>
+        <button class="btn small ghost" id="sel-text" type="button" hidden>Edit text</button>
+        <button class="btn small ghost" id="sel-delete" type="button">Delete</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <div class="draw-rail" id="draw-rail" role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
+      <button type="button" data-tool="cursor" aria-pressed="true" aria-label="Select and move (Esc)" title="Select and move (Esc)"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l12 8-6 1.5L8 19z"/></g></svg></button>
+      <button type="button" data-tool="trend" aria-pressed="false" aria-label="Trend line" title="Trend line"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19L20 5"/><circle cx="4" cy="19" r="1.6"/><circle cx="20" cy="5" r="1.6"/></g></svg></button>
+      <button type="button" data-tool="ray" aria-pressed="false" aria-label="Ray" title="Ray"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18L21 7"/><circle cx="4" cy="18" r="1.6"/><path d="M17 6.5l4 .5-1.5 3.5"/></g></svg></button>
+      <button type="button" data-tool="hline" aria-pressed="false" aria-label="Horizontal line" title="Horizontal line"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><circle cx="12" cy="12" r="1.6"/></g></svg></button>
+      <button type="button" data-tool="vline" aria-pressed="false" aria-label="Vertical line" title="Vertical line"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><circle cx="12" cy="12" r="1.6"/></g></svg></button>
+      <button type="button" data-tool="rect" aria-pressed="false" aria-label="Rectangle" title="Rectangle"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="1"/></g></svg></button>
+      <button type="button" data-tool="fib" aria-pressed="false" aria-label="Fibonacci retracement" title="Fibonacci retracement"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 9.5h18M3 13h18M3 19h18"/><path d="M5 19L19 5" stroke-dasharray="2 2"/></g></svg></button>
+      <button type="button" data-tool="long" aria-pressed="false" aria-label="Long position (risk/reward)" title="Long position (risk/reward)"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="8" rx="1"/><rect x="4" y="12" width="16" height="7" rx="1" stroke-dasharray="2 2"/><path d="M12 9V6m-2 2l2-2 2 2"/></g></svg></button>
+      <button type="button" data-tool="short" aria-pressed="false" aria-label="Short position (risk/reward)" title="Short position (risk/reward)"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="7" rx="1" stroke-dasharray="2 2"/><rect x="4" y="12" width="16" height="8" rx="1"/><path d="M12 15v3m-2-2l2 2 2-2"/></g></svg></button>
+      <button type="button" data-tool="text" aria-pressed="false" aria-label="Text note" title="Text note"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h14M12 6v13M9 19h6"/></g></svg></button>
+      </div>
+      <div class="chart-box">
+        <div class="legend" id="legend-box"><div id="legend"></div><div class="ind-legend" id="ind-legend"></div></div>
+        <div id="chart"></div>
+        <div class="overlay" id="overlay" hidden><span id="overlay-text">Running backtest…</span></div>
+        <div class="trade-nav" id="trade-nav" hidden>
+          <button class="btn" id="prev-trade" type="button" aria-label="Previous trade">‹</button>
+          <span id="trade-nav-label" aria-live="polite"></span>
+          <button class="btn" id="next-trade" type="button" aria-label="Next trade">›</button>
+          <button class="btn ghost" id="close-trade" type="button" aria-label="Clear selected trade">✕</button>
+        </div>
+      </div>
+    </div>
+    <div class="replay-dock" id="replay-dock" hidden>
+      <div class="rp-pick" id="rp-pick" hidden>
+        <p><b>Bar replay.</b> Click a candle on the chart to start there, or pick a date. The bars after it stay hidden until you step forward.</p>
+        <div class="row">
+          <label class="rp-field">Start date <input type="date" id="rp-date"></label>
+          <button class="btn primary" id="rp-go" type="button">Start replay</button>
+          <button class="btn" id="rp-random" type="button">Random date</button>
+          <button class="btn ghost" id="rp-cancel" type="button">Cancel</button>
+        </div>
+        <p class="hint" id="rp-pick-status" role="status"></p>
+      </div>
+      <div class="rp-run" id="rp-run" hidden>
+        <div class="rp-bar" role="group" aria-label="Replay controls">
+          <button class="btn" id="rp-play" type="button" aria-pressed="false">▶ Play</button>
+          <button class="btn primary" id="rp-step" type="button">Next bar ›</button>
+          <label class="rp-speed">Speed <select id="rp-speed"><option value="1">1 bar/s</option><option value="3">3 bars/s</option><option value="10">10 bars/s</option></select></label>
+          <span class="rp-time" id="rp-time" aria-live="off"></span>
+          <span class="rp-stats" id="rp-stats"></span>
+          <span class="rp-end">
+            <button class="btn" id="rp-learn" type="button" disabled>Build strategy</button>
+            <button class="btn" id="rp-finish" type="button">Finish and review</button>
+            <button class="btn ghost" id="rp-exit" type="button">Exit</button>
+          </span>
+        </div>
+        <div class="rp-ticket" id="rp-ticket">
+          <label class="rp-field">Lots <input type="number" id="rp-lots" min="0.01" max="100" step="0.01" inputmode="decimal"></label>
+          <label class="rp-field">Stop ($ away) <input type="number" id="rp-sl" min="0" step="0.1" inputmode="decimal" placeholder="none"></label>
+          <label class="rp-field">Target ($ away) <input type="number" id="rp-tp" min="0" step="0.1" inputmode="decimal" placeholder="none"></label>
+          <button class="btn sell" id="rp-sell" type="button">Sell <span id="rp-bid"></span></button>
+          <button class="btn buy" id="rp-buy" type="button">Buy <span id="rp-ask"></span></button>
+          <label class="rp-field rp-note">Why this trade? (saved with it) <input type="text" id="rp-note" maxlength="300" placeholder="e.g. pullback to the 20 EMA in an uptrend"></label>
+          <p class="hint rp-risk"><span id="rp-risk"></span> <span id="rp-atr"></span></p>
+        </div>
+        <form class="rp-position" id="rp-position" hidden>
+          <span class="rp-pos-text" id="rp-pos-text" aria-live="polite"></span>
+          <label class="rp-field">Stop <input type="number" id="rp-pos-sl" step="0.01" inputmode="decimal" placeholder="none"></label>
+          <label class="rp-field">Target <input type="number" id="rp-pos-tp" step="0.01" inputmode="decimal" placeholder="none"></label>
+          <button class="btn" type="submit">Update</button>
+          <button class="btn primary" id="rp-close" type="button">Close position</button>
+          <p class="hint">Drag the stop and target lines on the chart to move them.</p>
+        </form>
+        <p class="hint rp-keys">Keys: → next bar · Space play/pause · Shift+B buy · Shift+S sell · Shift+C close</p>
+        <details class="rp-log"><summary>Trades this session (<span id="rp-count">0</span>)</summary>
+          <div class="scroll" tabindex="0" aria-label="Trades this session"><table class="rp-trades" id="rp-trades"></table></div>
+        </details>
+      </div>
     </div>
     <div class="chart-note" id="chart-note"></div>
     <div class="busy" id="busy" hidden><span></span></div>
@@ -143,6 +222,11 @@
       <button role="tab" id="t-compare" data-tab="compare" aria-controls="tab-compare" aria-selected="false" tabindex="-1">Compare</button>
     </div>
     <div class="banner" id="banner" role="alert" hidden></div>
+    <div class="notice mode-note" id="mode-note" hidden><p id="mode-text"></p>
+        <span class="row"><button type="button" class="btn primary" id="mode-learn">Build a strategy from these trades</button>
+        <button type="button" class="btn" id="mode-resume">Resume replay</button>
+        <button type="button" class="btn ghost" id="mode-back">Back to the strategy backtest</button></span></div>
+    <p class="hint replay-hint" id="replay-hint" hidden>These results are from the strategy backtest. Your replay trades get their own report when you press <b>Finish and review</b>.</p>
     <div class="tab-body" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
       <div class="kpis" id="kpis"></div>
       <div class="empty" id="empty" hidden></div>
@@ -206,6 +290,46 @@
   <button class="btn" id="pine-copy" type="button">Copy code</button>
 </dialog>
 
+<dialog id="ind-dialog" aria-labelledby="ind-title" class="side-dialog">
+  <div class="dlg-head"><h2 id="ind-title">Indicators</h2><button class="btn ghost" id="ind-close" type="button">Done</button></div>
+  <label class="search">Search <input type="search" id="ind-search" placeholder="RSI, moving average, bands…" autocomplete="off"></label>
+  <div class="ind-list" id="ind-list" role="group" aria-label="Available indicators"></div>
+  <h3>On the chart</h3>
+  <div id="ind-active"></div>
+  <p class="hint">Values use the same formulas as TradingView and as this site's backtester, so what you see is what a strategy card gets.</p>
+</dialog>
+
+<dialog id="ind-settings" aria-labelledby="ind-set-title">
+  <form id="ind-set-form" novalidate>
+    <div class="dlg-head"><h2 id="ind-set-title">Indicator</h2></div>
+    <div class="fields" id="ind-set-fields"></div>
+    <p class="hint" id="ind-set-error" role="alert"></p>
+    <div class="row"><button class="btn primary" type="submit">Apply</button><button class="btn ghost" id="ind-set-defaults" type="button">Defaults</button><button class="btn ghost" id="ind-set-cancel" type="button">Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="text-dialog" aria-labelledby="text-title">
+  <form id="text-form">
+    <div class="dlg-head"><h2 id="text-title">Text note</h2></div>
+    <label class="fields">Text<input type="text" id="text-input" maxlength="120" autocomplete="off"></label>
+    <div class="row"><button class="btn primary" type="submit">Add</button><button class="btn ghost" id="text-cancel" type="button">Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="sessions-dialog" aria-labelledby="sessions-title">
+  <div class="dlg-head"><h2 id="sessions-title">My replay sessions</h2><button class="btn ghost" id="sessions-close" type="button">Close</button></div>
+  <p class="hint">Every trade you place in replay is recorded in this browser with its time, size, stop, target and your note.
+    Export a session to keep it, or run <code>python -m goldlab learn session.json</code> to turn it into a strategy card in the repo.</p>
+  <div id="sessions-list"></div>
+  <p class="row"><label class="btn ghost file-btn">Import a session file<input type="file" id="sessions-import" accept="application/json,.json"></label></p>
+</dialog>
+
+<dialog id="learn-dialog" aria-labelledby="learn-title">
+  <div class="dlg-head"><h2 id="learn-title">A strategy from your trades</h2><button class="btn ghost" id="learn-close" type="button">Close</button></div>
+  <div id="learn-body" class="learn-body"></div>
+  <div class="row"><button class="btn primary" id="learn-run" type="button">Backtest this strategy</button><button class="btn" id="learn-save" type="button">Save to my strategies</button></div>
+</dialog>
+
 <div class="sheet-backdrop" id="backdrop" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <p class="sr" id="announce" aria-live="polite"></p>
@@ -216,6 +340,10 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="ta.js"></script>
 <script src="app.js"></script>
+<script src="indicators.js"></script>
+<script src="draw.js"></script>
+<script src="replay.js"></script>
 </body>
 </html>

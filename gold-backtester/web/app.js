@@ -8,13 +8,51 @@
   var state = {
     meta: null, strategies: {}, current: null, tf: null, days: null, preset: "realistic",
     custom: null, result: null, filter: "all", extra: null, selected: null, priceLines: [], plotSeries: [],
-    seq: 0, showBH: false,
+    seq: 0, showBH: false, locked: false,
   };
   var store = {
     get: function (k, d) { try { var v = localStorage.getItem("gsl:" + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set: function (k, v) { try { localStorage.setItem("gsl:" + k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } },
   };
   window.__gsl = state;   // read-only hook for the end-to-end tests
+
+  // ---------------------------------------------------------------- shared API for indicators.js, draw.js, replay.js
+  var hooks = {};
+  var TF_SEC = { "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400 };
+  var GSL = window.GSL = {
+    state: state, store: store, L: window.LightweightCharts,
+    bars: null, shown: 0, tf: null, barSec: 3600, clickConsumedAt: 0, onChartClick: null, replayActive: false,
+    on: function (evt, fn) { (hooks[evt] = hooks[evt] || []).push(fn); },
+    emit: function (evt, arg) { (hooks[evt] || []).forEach(function (fn) { try { fn(arg); } catch (e) { if (window.console) console.error(e); } }); },
+    // bars on the price chart, as columns {t, o, h, l, c, v}; `shown` is how many are visible (replay hides the future)
+    setBars: function (b, tf, shown) {
+      GSL.bars = b; GSL.tf = tf || GSL.tf; GSL.barSec = TF_SEC[GSL.tf] || 3600;
+      GSL.shown = shown === undefined ? b.t.length : shown; GSL.emit("bars", GSL.shown);
+    },
+    indexOfTime: function (t) {
+      var T = GSL.bars && GSL.bars.t, lo = 0, hi = GSL.shown - 1;
+      if (!T) return -1;
+      while (lo <= hi) { var mid = (lo + hi) >> 1; if (T[mid] === t) return mid; if (T[mid] < t) lo = mid + 1; else hi = mid - 1; }
+      return -1;
+    },
+    timeToLogical: function (t) {
+      var T = GSL.bars && GSL.bars.t, n = GSL.shown; if (!T || !n) return null;
+      if (t <= T[0]) return (t - T[0]) / GSL.barSec;
+      if (t >= T[n - 1]) return n - 1 + (t - T[n - 1]) / GSL.barSec;
+      var lo = 0, hi = n - 1;
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (T[mid] <= t) lo = mid; else hi = mid; }
+      return lo + (t - T[lo]) / (T[hi] - T[lo]);
+    },
+    logicalToTime: function (i) {
+      var T = GSL.bars && GSL.bars.t, n = GSL.shown; if (!T || !n) return null;
+      i = Math.round(i);
+      if (i < 0) return T[0] + i * GSL.barSec;
+      if (i >= n) return T[n - 1] + (i - n + 1) * GSL.barSec;
+      return T[i];
+    },
+    shiftTime: function (t, di) { var lg = GSL.timeToLogical(t); return lg === null ? t : GSL.logicalToTime(Math.round(lg) + di); },
+    setPanes: function (k) { var el = document.getElementById("chart"); if (el) el.style.setProperty("--panes", String(k)); },
+  };
 
   // ---------------------------------------------------------------- formatting
   function money(v, dp) {
@@ -75,7 +113,9 @@
     markers = L.createSeriesMarkers(candles, []);
     price.subscribeCrosshairMove(legendUpdate);
     price.subscribeClick(function (p) {
-      var r = state.result; if (!r || !p || !p.time) return;
+      if (Date.now() - (GSL.clickConsumedAt || 0) < 400) return;      // a drawing tool used this click
+      if (GSL.onChartClick && GSL.onChartClick(p)) return;            // bar replay is picking a start bar
+      var r = state.result; if (!r || !p || !p.time || state.locked) return;
       var t = r.trades.find(function (x) { return x.entry_time === p.time || x.exit_time === p.time; }) ||
         r.trades.find(function (x) { return x.entry_time <= p.time && p.time <= x.exit_time; });
       if (t) focusTrade(t, true);
@@ -102,12 +142,12 @@
   var plotColors = ["#3d7bd9", "#a65fc4", "#d0801f", "#2f9e9e", "#7d8a2a"];
   function legendUpdate(p) {
     var r = state.result; if (!r) return;
-    var c = null;
+    var c = null, B = GSL.bars;
     if (p && p.time && p.seriesData) c = p.seriesData.get(candles);
-    if (!c) { var last = r.candles[r.candles.length - 1]; c = last ? { open: last[1], high: last[2], low: last[3], close: last[4] } : null; }
-    var head = "<span><b>XAUUSD</b> " + esc(r.data.timeframe) + "</span>";
+    if (!c && B && GSL.shown) { var i = GSL.shown - 1; c = { open: B.o[i], high: B.h[i], low: B.l[i], close: B.c[i] }; }
+    var head = "<span><b>XAUUSD</b> " + esc(GSL.tf || r.data.timeframe) + (GSL.replayActive ? " · replay" : "") + "</span>";
     if (c) head += "<span>O <b>" + num(c.open) + "</b> H <b>" + num(c.high) + "</b> L <b>" + num(c.low) + "</b> C <b>" + num(c.close) + "</b></span>";
-    Object.keys(r.plots).forEach(function (name, k) {
+    if (!GSL.replayActive) Object.keys(r.plots).forEach(function (name, k) {
       head += '<span><i class="sw" style="background:' + plotColors[k % plotColors.length] + '"></i>' + esc(name) + "</span>";
     });
     $("legend").innerHTML = head;
@@ -138,9 +178,16 @@
     ddSeries.setData(r.drawdown.map(function (p) { return { time: p[0], value: p[1], color: down }; }));
     eqChart.timeScale().fitContent();
   }
+  function columns(rows) {
+    var b = { t: [], o: [], h: [], l: [], c: [], v: [] };
+    rows.forEach(function (c) { b.t.push(c[0]); b.o.push(c[1]); b.h.push(c[2]); b.l.push(c[3]); b.c.push(c[4]); b.v.push(c[5] || 0); });
+    return b;
+  }
   function drawChart() {
     var r = state.result;
+    if (GSL.replayActive) { drawEquity(); return; }       // bar replay owns the price chart until it ends
     candles.setData(r.candles.map(function (c) { return { time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }; }));
+    GSL.setBars(columns(r.candles), r.data.timeframe);
     state.plotSeries.forEach(function (s) { price.removeSeries(s); });
     state.plotSeries = [];
     Object.keys(r.plots).forEach(function (name, k) {
@@ -153,7 +200,7 @@
     var n = r.candles.length;
     if (n > 300) price.timeScale().setVisibleLogicalRange({ from: n - 300, to: n + 5 }); else price.timeScale().fitContent();
     legendUpdate(null);
-    var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · data: " + r.data.source;
+    var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · data: " + (r.data.source || "Dukascopy");
     if (r.data.candles_shown < r.data.bars) note += " · chart shows the last " + r.data.candles_shown.toLocaleString() + " bars";
     $("chart-note").textContent = note;
     drawEquity();
@@ -288,7 +335,7 @@
       return '<tr tabindex="0" data-n="' + t.n + '"' + (state.selected === t.n ? ' class="sel"' : "") + '><td class="num" data-label="#">' + t.n +
         '</td><td data-label="Side"><span class="side ' + t.side + '">' + t.side + '</span></td><td data-label="Entry time">' + dt(t.entry_time) +
         '</td><td class="num" data-label="Entry">' + num(t.entry_price) + '</td><td data-label="Exit time">' + dt(t.exit_time) +
-        '</td><td class="num" data-label="Exit">' + num(t.exit_price) + '</td><td class="opt" data-label="Exit by">' + esc(t.exit_id) +
+        '</td><td class="num" data-label="Exit">' + num(t.exit_price) + '</td><td class="opt" data-label="Exit by">' + esc(exitBy(t)) +
         '</td><td class="num" data-label="Lots">' + num(t.lots) + '</td><td class="num ' + cls(t.pnl) + '" data-label="P&L $">' + num(t.pnl) +
         '</td><td class="num ' + cls(t.r) + '" data-label="R">' + (t.r === null ? "–" : num(t.r, 2)) +
         '</td><td class="num opt ' + cls(t.pnl) + '" data-label="P&L %">' + num(t.pnl_pct) + '</td><td class="num opt" data-label="Run-up">' + num(t.runup) +
@@ -296,6 +343,12 @@
         '</td><td class="num opt ' + cls(t.cum_pnl) + '" data-label="Cum. P&L">' + num(t.cum_pnl) + "</td></tr>";
     }).join("");
     $("trades").innerHTML = head + "<tbody>" + (body || '<tr><td colspan="15">No trades match this filter.</td></tr>') + "</tbody>";
+  }
+  function exitBy(t) {
+    var k = { stop: "Stop loss", target: "Take profit", margin: "Margin call", reverse: "Reversed" }[t.exit_kind];
+    if (k) return k;
+    if (t.exit_kind === "close") return /exit rule|time stop|End of data/.test(t.comment || "") ? t.comment : "Closed";
+    return t.exit_id;
   }
   function showTradesWith(extra) {
     state.extra = extra; state.filter = "all";
@@ -538,13 +591,14 @@
   }
   function runBacktest() {
     if (!state.current) return Promise.resolve();
+    if (state.locked) { toast("Finish or exit bar replay first."); return Promise.resolve(); }
     if (!validDates()) return Promise.resolve();
     var req = buildRequest(), my = ++state.seq;
     setBusy(true);
     return api("backtest", req).then(function (r) {
       if (my !== state.seq) return;
       clearError();
-      state.result = r; renderAll(); remember(r, req);
+      state.result = r; renderAll(); remember(r, req); GSL.emit("result", r);
       var m = r.metrics;
       announce("Backtest finished: " + r.strategy.name + ", net profit " + money(m.net_profit, 0) + " on " + m.total_trades + " trades, max drawdown " + pct(m.max_drawdown_pct, 1) + ".");
     }).catch(function (e) { if (my === state.seq) showError(e.message); })
@@ -577,7 +631,7 @@
   }
   function downloadCSV() {
     var r = state.result; if (!r) return;
-    var cols = ["n", "side", "entry_time", "entry_price", "exit_time", "exit_price", "exit_id", "lots", "pnl", "r", "pnl_pct", "runup", "drawdown", "bars", "cum_pnl", "commission"];
+    var cols = ["n", "side", "entry_time", "entry_price", "exit_time", "exit_price", "exit_id", "exit_kind", "lots", "pnl", "r", "pnl_pct", "runup", "drawdown", "bars", "cum_pnl", "commission"];
     var lines = [cols.join(",")].concat(r.trades.map(function (t) {
       return cols.map(function (c) { return /time/.test(c) ? new Date(t[c] * 1000).toISOString() : (t[c] === null ? "" : t[c]); }).join(",");
     }));
@@ -600,7 +654,7 @@
     var name = m[1].trim().replace(/^["']|["']$/g, ""), key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     state.custom = text;
     $("yaml-status").textContent = "Checking the rules…";
-    runBacktest().then(function () {
+    return runBacktest().then(function () {
       var r = state.result;
       if (!r || r.strategy.name !== name || !$("banner").hidden) { $("yaml-status").textContent = "Fix the error shown above the results, then save again."; $("yaml").setAttribute("aria-invalid", "true"); return; }
       $("yaml").removeAttribute("aria-invalid");
@@ -732,7 +786,30 @@
 
   // ---------------------------------------------------------------- boot
   initCharts();
+  Object.assign(GSL, {
+    price: price, candles: candles, markers: markers, eqChart: eqChart,
+    api: api, toast: toast, announce: announce, tok: tok, esc: esc, num: num, money: money, pct: pct, dt: dt, cls: cls,
+    drawChart: function () { drawChart(); }, drawMarkers: function () { drawMarkers(); }, runBacktest: runBacktest,
+    buildRequest: buildRequest, selectTab: selectTab, readNum: readNum, clearSelection: clearSelection,
+    setStrategy: setStrategy, fillStrategySelect: fillStrategySelect, saveYaml: function () { return saveYaml(); },
+    setTimeframe: function (tf) {
+      if (!state.meta.data[tf]) return;
+      state.tf = tf; state.days = defaultDays(tf); markSeg("tf", "tf", tf); markSeg("range", "days", state.days); syncDates();
+    },
+    // show a result that didn't come from a strategy backtest (e.g. trades placed in bar replay)
+    showResult: function (r) { state.result = r; clearError(); renderAll(); GSL.emit("result", r); },
+    setLocked: function (on) {
+      state.locked = on;
+      document.querySelectorAll("#strategy, #tf button, #range button, #start, #end, #preset button, #run, #apply-yaml, #run-checks, #use-min-lot")
+        .forEach(function (el) { el.disabled = on; });
+      // with every control disabled, the phone toolbar is still a scroll area: keep it reachable by keyboard
+      var tc = document.querySelector(".toolbar-controls");
+      if (on) { tc.tabIndex = 0; tc.setAttribute("aria-label", "Chart options (locked during replay)"); } else { tc.removeAttribute("tabindex"); tc.removeAttribute("aria-label"); }
+    },
+  });
   wire();
+  GSL.on("bars", function () { legendUpdate(null); });
+  GSL.on("step", function () { legendUpdate(null); });
   markSeg("preset", "preset", state.preset);
   placeholderKpis();
   setBusy(true);

@@ -7,6 +7,7 @@
   journal   [strategy-slug]
   import-tv <trades.csv> --name "My TradingView strategy"
   new       "My strategy name" [--tf 15m]
+  learn     <session.json> [--name "My setup"]      turn trades from website bar replay into a strategy card
   data      [--tf 1h] [--start 2024-01-01]          download/refresh Dukascopy data
   paper     <strategy> [--tf 15m] [--once]          run the live loop against the paper broker
   webhook   [--port 8080]                           receive TradingView alerts
@@ -154,6 +155,47 @@ def cmd_new(a):
     print(f"Created {path}\nEdit it, then: python -m goldlab backtest {path.name} --report")
 
 
+def cmd_learn(a):
+    """Read a replay session exported from the website and write the strategy card it implies."""
+    from .journal import slugify
+    from .learn import learn, reproduction
+    from .manual import ManualError, clean_trades
+    try:
+        sess = json.loads(Path(a.session).read_text())
+    except (OSError, ValueError) as e:
+        sys.exit(f"Can't read {a.session}: {e}")
+    if not isinstance(sess, dict) or sess.get("format") != "goldlab-replay-session":
+        sys.exit("That isn't a replay session file. Export one from My sessions on the website.")
+    tf = sess.get("timeframe", "1h")
+    try:
+        trades = clean_trades(sess.get("trades") or [])
+    except ManualError as e:
+        sys.exit(f"Bad trade in the session: {e}")
+    if len(trades) < 3:
+        sys.exit(f"The session has {len(trades)} closed trades; take at least 3 in replay first.")
+    seen = [(int(sess["start_time"]), int(sess["current_time"]))]
+    df = get_data(tf)
+    name = a.name or (sess.get("name") or "").replace("Replay", "My setup", 1) or None
+    out = learn(df, trades, seen, tf, name=name)
+    for side, info in out["sides"].items():
+        if not info.get("trades"):
+            continue
+        print(f"{side.title()} trades: {info['trades']}")
+        for c in info.get("conditions", []):
+            print(f"  - {c['label']}: true at {c['at_your_entries']:.0%} of your entries, {c['on_all_bars']:.0%} of all bars")
+    for n in out["notes"]:
+        print("Note:", n)
+    if not out.get("card"):
+        sys.exit("No strategy written: there isn't a clear enough pattern yet.")
+    rep = reproduction(df, out["card"], trades, seen)
+    print(f"The card repeats {rep['reproduced']} of your {rep['your_entries']} entries on the bars you replayed.")
+    path = Path(a.out) if a.out else ROOT / "strategies" / f"{slugify(out['name']).replace('-', '_')}.yaml"
+    if path.exists() and not a.force:
+        sys.exit(f"{path} already exists (use --force to overwrite, or --name for a new name)")
+    path.write_text(out["card"])
+    print(f"Wrote {path}\nNext: python -m goldlab backtest {path.name} --report   and   python -m goldlab validate {path.name}")
+
+
 def cmd_list(a):
     for p in sorted((ROOT / "strategies").rglob("*")):
         if p.suffix in (".yaml", ".yml", ".py"):
@@ -249,6 +291,9 @@ def main(argv=None):
     sp = sub.add_parser("import-tv"); sp.add_argument("csv"); sp.add_argument("--name", required=True)
     sp.add_argument("--notes"); sp.set_defaults(fn=cmd_import_tv)
     sp = sub.add_parser("new"); sp.add_argument("name"); sp.add_argument("--tf", default="1h"); sp.set_defaults(fn=cmd_new)
+    sp = sub.add_parser("learn", help="turn a replay session from the website into a strategy card")
+    sp.add_argument("session"); sp.add_argument("--name"); sp.add_argument("--out"); sp.add_argument("--force", action="store_true")
+    sp.set_defaults(fn=cmd_learn)
     sp = sub.add_parser("list"); sp.set_defaults(fn=cmd_list)
     sp = sub.add_parser("data"); sp.add_argument("--tf", default="1h"); sp.add_argument("--start", default="2024-01-01")
     sp.add_argument("--end"); sp.set_defaults(fn=cmd_data)

@@ -81,8 +81,8 @@ def test_matrix_results_are_consistent(slug, tf, preset):
 
     times = [c[0] for c in r["candles"]]
     assert times == sorted(set(times)), "candles strictly increasing"
-    for t, o, h, lo, c in r["candles"]:
-        assert lo <= min(o, c) + 1e-9 and h >= max(o, c) - 1e-9
+    for t, o, h, lo, c, v in r["candles"]:
+        assert lo <= min(o, c) + 1e-9 and h >= max(o, c) - 1e-9 and v >= 0
 
     assert r["trades_total"] == m["total_trades"]
     assert m["winning_trades"] + m["losing_trades"] + m["even_trades"] == m["total_trades"]

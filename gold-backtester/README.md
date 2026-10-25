@@ -45,6 +45,28 @@ Sample gold data is included in `data/sample/`, so this works offline:
 hard (HTTP 429, and sometimes refuses connections for a while), so downloads are slow, cached under
 `data/cache/`, and resume where they stopped when you run the command again.
 
+## Trade it by hand first: bar replay
+
+If you trade by eye, the website can capture what you do and turn it into a strategy:
+
+1. Press **Replay**, pick a start date (or click a candle). Everything after it is hidden.
+2. Step forward bar by bar (→ key or **Next bar**) or press **Play**. Add indicators and draw lines as you go.
+3. **Buy** or **Sell** with a lot size, a stop and a target, and note why. Drag the stop and target lines to move them.
+   Fills follow the backtester's rules exactly: you act at the bar's close, stops and targets trigger along
+   TradingView's in-bar path, with the same spread, commission, slippage and swap.
+4. **Finish and review** re-runs your trades on the server and shows the full Strategy Tester report.
+5. **Build strategy** (from 3 trades; 10 or more per side works better) checks about 60 chart conditions
+   (trend, momentum, breakouts, candle patterns, sessions) at your entries and at the bars you passed on,
+   picks the few that best reproduce your entries, takes your usual stop (in ATRs) and target (in R), and writes
+   a strategy card. It tells you how many of your entries the card repeats and how it did on all the data.
+
+Sessions are saved in your browser (**My sessions**). Export one and turn it into a card in the repo:
+
+```
+python -m goldlab learn "Replay_1h_from_2025-06-02.json" --name "My pullback setup"
+python -m goldlab validate my_pullback_setup.yaml
+```
+
 ## Capturing your strategies
 
 Every strategy is a **card**: a short YAML file you can read like a trading plan.
@@ -189,6 +211,16 @@ the copy committed in `public/`, so run `python -m goldlab site` before you comm
 
 `python -m goldlab serve` previews the site with a working backtest API on http://localhost:8000.
 
+The backtester page has TradingView-style chart tools:
+
+- **Indicators**: SMA, EMA, WMA, Bollinger Bands, Keltner and Donchian channels, VWAP, Supertrend on the price;
+  RSI, MACD, Stochastic, ATR, ADX/DMI, CCI and volume in their own panes. `web/ta.js` mirrors
+  `goldlab/indicators.py`, and a test checks they agree to 1e-9.
+- **Drawing**: trend line, ray, horizontal and vertical lines, rectangle, Fibonacci retracement, long and short
+  position (risk/reward) and text. Drag points to adjust, Delete to remove, Ctrl+Z to undo, magnet to snap to
+  candle prices. Drawings are pinned to time and price, so they stay in place across timeframes.
+- **Replay** and **My sessions**: see "Trade it by hand first" above.
+
 ### Testing the website
 
 ```
@@ -222,7 +254,10 @@ goldlab/
   indicators.py  Pine ta.* equivalents          rules.py   strategy cards
   strategy.py    Python strategy base class      pine.py    card -> Pine v6
   journal.py     strategy and run history        validate.py  checks above
+  manual.py      replayed manual trades          learn.py     manual trades -> strategy card
   report.py      HTML report (Lightweight Charts)
+  webapi.py      the website's API (backtest, validate, pine, bars, manual, learn)
+web/           the backtester page: app.js, ta.js (indicator maths), indicators.js, draw.js, replay.js
   live/        runner.py, risk.py, webhook.py, brokers/ (paper, oanda, mt5)
 strategies/    your cards (examples/ holds the templates)
 journal/       everything you've tried (commit it)

@@ -68,7 +68,7 @@ def run(strategy, data: pd.DataFrame, settings: Settings | None = None,
     trades = pd.DataFrame(broker.closed)
     if trades.empty:
         trades = pd.DataFrame(columns=["trade", "side", "entry_id", "entry_time", "entry_price", "entry_bar",
-                                       "exit_id", "exit_time", "exit_price", "exit_bar", "qty", "lots",
+                                       "exit_id", "exit_kind", "exit_time", "exit_price", "exit_bar", "qty", "lots",
                                        "pnl", "pnl_pct", "commission", "runup", "drawdown", "bars", "comment",
                                        "risk", "r"])
     else:

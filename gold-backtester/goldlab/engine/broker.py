@@ -284,7 +284,11 @@ class Broker:
         self.entries[id] = EntryOrder(id, side, typ, qty, limit, stop, self.bar, comment, oca, False, bracket)
         self.placed.append((self.bar, "entry", id, side, typ, round(limit or 0, 6), round(stop or 0, 6), qty))
         if self.s.process_orders_on_close and typ == "market":
-            self._fill_entry(self.entries.pop(id), self.c[self.bar], self.bar, at_close=True)
+            # same costs as a fill at the open: buys pay the ask plus slippage, sells get the bid minus slippage
+            sp = self.spread[self.bar]
+            slip = self.s.slippage_ticks * self.s.mintick
+            price = self.c[self.bar] + sp + slip if side == LONG else self.c[self.bar] - slip
+            self._fill_entry(self.entries.pop(id), price, self.bar, at_close=True)
 
     def exit(self, id: str, from_entry: str | None = None, **kw):
         prev = self.exits.get(id)
@@ -354,7 +358,7 @@ class Broker:
         pos = self.position
         if pos * o.side < 0:  # reversal: close everything first, like strategy.entry does
             for t in list(self.trades):
-                self._close_trade(t, t.qty, price if t.side == SHORT else price, bar, o.id, o.comment)
+                self._close_trade(t, t.qty, price, bar, o.id, o.comment, kind="reverse")
         elif pos * o.side > 0:
             same = [t for t in self.trades if t.side == o.side]
             if len(same) >= max(1, self.s.pyramiding):
@@ -362,7 +366,8 @@ class Broker:
                 return
         self._open_trade(o, price, bar, o.qty)
 
-    def _close_trade(self, t: Trade, qty: float, price: float, bar: int, exit_id: str, comment: str = ""):
+    def _close_trade(self, t: Trade, qty: float, price: float, bar: int, exit_id: str, comment: str = "",
+                     kind: str = ""):
         qty = min(qty, t.qty)
         fee = self._commission(qty, price)
         frac = qty / t.qty
@@ -376,7 +381,7 @@ class Broker:
         self.closed.append({
             "trade": t.tid, "side": "long" if t.side == LONG else "short", "entry_id": t.entry_id,
             "entry_time": t.entry_time, "entry_price": t.entry_price, "entry_bar": t.entry_bar,
-            "exit_id": exit_id, "exit_time": self.time[bar], "exit_price": price, "exit_bar": bar,
+            "exit_id": exit_id, "exit_kind": kind, "exit_time": self.time[bar], "exit_price": price, "exit_bar": bar,
             "qty": qty, "lots": qty / self.s.contract_size,
             "pnl": pnl, "pnl_pct": 100 * pnl / (t.entry_price * qty * pv),
             "commission": fee + entry_fee,
@@ -401,7 +406,8 @@ class Broker:
         for t in [t for t in self.trades if c.entry_id is None or t.entry_id == c.entry_id]:
             price = bid - slip if t.side == LONG else bid + self.cur_spread + slip
             q = t.qty if c.qty_percent >= 100 else max(self._round_qty(t.qty * c.qty_percent / 100), self.s.qty_step)
-            self._close_trade(t, q, price, bar, "Close" if c.entry_id is None else f"Close {c.entry_id}", c.comment)
+            self._close_trade(t, q, price, bar, "Close" if c.entry_id is None else f"Close {c.entry_id}", c.comment,
+                              kind="close")
 
     # ------------------------------------------------------------------
     # trigger handling along the intrabar path
@@ -490,7 +496,8 @@ class Broker:
         if kind.startswith("exit"):
             q = t.qty if order.qty_percent >= 100 else max(self._round_qty(t.qty * order.qty_percent / 100), self.s.qty_step)
             order.done.add(t.tid)
-            self._close_trade(t, q, price, bar, order.id, order.comment)
+            self._close_trade(t, q, price, bar, order.id, order.comment,
+                              kind="stop" if kind == "exit_stop" else "target")
         else:
             self.entries.pop(order.id, None)
             self._fill_entry(order, price, bar)
@@ -640,7 +647,7 @@ class Broker:
                 worst = self.l[i] if self.position > 0 else self.h[i]
                 for t in list(self.trades):
                     px = worst if t.side == LONG else worst + sp
-                    self._close_trade(t, t.qty, px, i, "Margin call")
+                    self._close_trade(t, t.qty, px, i, "Margin call", kind="margin")
                 self.entries.clear()
                 self._log("margin_call", equity=self.equity_low[i])
                 self.equity_close[i] = self.cash

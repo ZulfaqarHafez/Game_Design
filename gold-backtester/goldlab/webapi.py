@@ -5,6 +5,9 @@ Operations (POST JSON, or GET for `strategies`):
   backtest    run a card (by id or pasted YAML) with parameter and cost overrides
   validate    the readiness checklist for the same request
   pine        Pine Script v6 for a card
+  bars        raw bars (with spread and swap rollovers) for bar replay
+  manual      re-run trades placed by hand in replay through the engine
+  learn       turn those trades into a strategy card
 
 Only YAML strategy cards are accepted from the web (parsed with yaml.safe_load and a
 whitelisted expression language). Requests are size- and range-limited so a public
@@ -28,7 +31,7 @@ from .journal import slugify
 from .rules import RuleError, RuleStrategy
 
 MAX_YAML = 20_000
-MAX_BODY = 64_000
+MAX_BODY = 200_000
 MAX_BARS = 150_000
 MAX_CANDLES = 30_000
 MAX_TRADES = 3_000
@@ -218,32 +221,32 @@ def op_strategies(_req: dict | None = None) -> dict:
             "defaults": {"realistic": asdict(Settings.realistic()), "tradingview": asdict(Settings.tradingview())}}
 
 
-def op_backtest(req: dict) -> dict:
-    t0 = time.time()
-    s = _strategy_from(req)
-    st = _settings(s, req)
-    tf, df = _window(req, s)
-    res = run(s, df, st)
+def _trade_rows(trades: pd.DataFrame) -> list:
+    tr = []
+    for row in trades.iloc[-MAX_TRADES:].itertuples(index=False):
+        tr.append({"n": int(row.trade), "side": row.side, "entry_time": _ts(row.entry_time),
+                   "entry_price": _num(row.entry_price), "exit_time": _ts(row.exit_time),
+                   "exit_price": _num(row.exit_price), "exit_id": str(row.exit_id),
+                   "exit_kind": str(getattr(row, "exit_kind", "") or ""), "lots": _num(row.lots),
+                   "pnl": _num(row.pnl), "pnl_pct": _num(row.pnl_pct), "runup": _num(row.runup),
+                   "drawdown": _num(row.drawdown), "bars": int(row.bars), "cum_pnl": _num(row.cum_pnl),
+                   "commission": _num(row.commission), "r": _num(getattr(row, "r", None)),
+                   "risk": _num(getattr(row, "risk", None)), "comment": str(getattr(row, "comment", "") or "")})
+    return tr
+
+
+def _payload(s, st: Settings, tf: str, df: pd.DataFrame, res, t0: float, req: dict, strategy: dict) -> dict:
+    """The JSON the website draws: metrics, trades, candles, equity, monthly returns."""
     from .validate import return_stats
     res.metrics.update(return_stats(res))
     trades = res.trades
     n = len(trades)
-    tr = []
-    if n:
-        sub = trades.iloc[-MAX_TRADES:]
-        for row in sub.itertuples(index=False):
-            tr.append({"n": int(row.trade), "side": row.side, "entry_time": _ts(row.entry_time),
-                       "entry_price": _num(row.entry_price), "exit_time": _ts(row.exit_time),
-                       "exit_price": _num(row.exit_price), "exit_id": str(row.exit_id), "lots": _num(row.lots),
-                       "pnl": _num(row.pnl), "pnl_pct": _num(row.pnl_pct), "runup": _num(row.runup),
-                       "drawdown": _num(row.drawdown), "bars": int(row.bars), "cum_pnl": _num(row.cum_pnl),
-                       "commission": _num(row.commission), "r": _num(getattr(row, "r", None)),
-                       "risk": _num(getattr(row, "risk", None))})
     max_c = int(min(req.get("max_candles") or MAX_CANDLES, MAX_CANDLES))
     shown = df.iloc[-max_c:]
     secs = shown.index.as_unit("s").asi8  # unit-safe: indexes may be stored in ns or us
+    vol = shown["volume"].round(3) if "volume" in shown else pd.Series(0.0, index=shown.index)
     candles = np.column_stack([secs, shown["open"].round(2), shown["high"].round(2),
-                               shown["low"].round(2), shown["close"].round(2)]).tolist()
+                               shown["low"].round(2), shown["close"].round(2), vol]).tolist()
     candles = [[int(c[0])] + c[1:] for c in candles]
     plots = {}
     for name, ser in (res.strategy.plots or {}).items():
@@ -262,16 +265,13 @@ def op_backtest(req: dict) -> dict:
     bh = st.initial_capital * df["close"].loc[e.index] / first_close
     a = df.attrs
     return {
-        "strategy": {"name": s.name, "description": s.description, "timeframe": tf, "params": vars(s.p),
-                     "labels": dict(s.card.get("labels") or {}),
-                     "evidence": s.card.get("evidence"), "evidence_level": _evidence_level(s.card.get("evidence")),
-                     "fingerprint": s.fingerprint()},
+        "strategy": strategy,
         "data": {"symbol": "XAUUSD", "timeframe": tf, "source": a.get("source"), "start": str(df.index[0]),
                  "end": str(df.index[-1]), "bars": len(df), "candles_shown": len(shown)},
         "settings": {k: _num(v) for k, v in asdict(st).items()},
         "metrics": {k: _num(v) for k, v in res.metrics.items()},
         "sides": _side_stats(trades) if n else {},
-        "trades": tr, "trades_total": n, "trades_truncated": n > MAX_TRADES,
+        "trades": _trade_rows(trades) if n else [], "trades_total": n, "trades_truncated": n > MAX_TRADES,
         "open_trades": [{**t, "entry_time": _ts(t["entry_time"]), "entry_price": _num(t["entry_price"])}
                         for t in res.open_trades],
         "candles": candles, "plots": plots,
@@ -281,6 +281,19 @@ def op_backtest(req: dict) -> dict:
         "monthly": _monthly(eq, st.initial_capital),
         "elapsed_ms": int((time.time() - t0) * 1000),
     }
+
+
+def op_backtest(req: dict) -> dict:
+    t0 = time.time()
+    s = _strategy_from(req)
+    st = _settings(s, req)
+    tf, df = _window(req, s)
+    res = run(s, df, st)
+    info = {"name": s.name, "description": s.description, "timeframe": tf, "params": vars(s.p),
+            "labels": dict(s.card.get("labels") or {}),
+            "evidence": s.card.get("evidence"), "evidence_level": _evidence_level(s.card.get("evidence")),
+            "fingerprint": s.fingerprint()}
+    return _payload(s, st, tf, df, res, t0, req, info)
 
 
 def op_validate(req: dict) -> dict:
@@ -306,7 +319,149 @@ def op_pine(req: dict) -> dict:
         raise ApiError(str(e)) from None
 
 
-OPS = {"strategies": op_strategies, "backtest": op_backtest, "validate": op_validate, "pine": op_pine}
+def _tf(req: dict) -> str:
+    tf = req.get("timeframe")
+    if tf not in TIMEFRAMES or tf not in FROM_SAMPLE:
+        raise ApiError(f"Timeframe must be one of {TIMEFRAMES}")
+    return tf
+
+
+def _unix(v, what: str) -> int:
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+        return int(v)
+    if isinstance(v, str) and v:
+        try:
+            return int(pd.Timestamp(v, tz="UTC").timestamp())
+        except ValueError:
+            pass
+    raise ApiError(f"{what} must be a date (YYYY-MM-DD) or a unix time")
+
+
+_ROLL_CACHE: dict = {}
+
+
+def _rollovers(tf: str) -> np.ndarray:
+    """Swap rollovers per bar for the whole timeframe, computed exactly as the broker does."""
+    if tf not in _ROLL_CACHE:
+        from .engine.broker import Broker
+        _ROLL_CACHE[tf] = Broker(_data(tf), Settings()).rollovers
+    return _ROLL_CACHE[tf]
+
+
+def op_bars(req: dict) -> dict:
+    """Bars for bar replay, at full precision so the browser fills trades exactly like the engine."""
+    tf = _tf(req)
+    df = _data(tf)
+    secs = df.index.as_unit("s").asi8
+    at = _unix(req.get("at"), "at")
+    before = int(min(max(int(req.get("before", 300)), 0), 2000))
+    after = int(min(max(int(req.get("after", 3000)), 1), 8000))
+    i0 = int(np.searchsorted(secs, at))
+    if i0 >= len(df):
+        raise ApiError("There are no bars after that time on this timeframe")
+    lo, hi = max(0, i0 - before), min(len(df), i0 + after)
+    sub = df.iloc[lo:hi]
+    vol = sub["volume"] if "volume" in sub else pd.Series(0.0, index=sub.index)
+    spread = sub["spread"].fillna(0) if "spread" in sub else pd.Series(0.0, index=sub.index)
+    return {"timeframe": tf, "index": i0 - lo, "first": lo == 0, "last": hi == len(df),
+            "t": [int(x) for x in secs[lo:hi]], "o": sub["open"].tolist(), "h": sub["high"].tolist(),
+            "l": sub["low"].tolist(), "c": sub["close"].tolist(), "v": vol.round(3).tolist(),
+            "sp": spread.tolist(), "roll": [int(x) for x in _rollovers(tf)[lo:hi]],
+            "data": {"start": str(df.index[0].date()), "end": str(df.index[-1].date())}}
+
+
+def _manual_window(req: dict, tf: str, trades: list[dict]):
+    df = _data(tf)
+    secs = df.index.as_unit("s").asi8
+    start = _unix(req.get("start_time"), "start_time")
+    end = _unix(req.get("end_time"), "end_time")
+    if end < start:
+        raise ApiError("end_time is before start_time")
+    for t in trades:
+        times = [t["entry_time"]] + ([t["exit_time"]] if t["exit_time"] else []) + [m["time"] for m in t["mods"]]
+        if min(times) < start or max(times) > end:
+            raise ApiError("Every trade must fall inside the session's start and end time")
+    lo, hi = int(np.searchsorted(secs, start)), int(np.searchsorted(secs, end, side="right"))
+    if hi - lo < 2:
+        raise ApiError("The session is too short to review (need at least 2 bars)")
+    if hi - lo > MAX_BARS:
+        raise ApiError(f"The session covers too many bars ({hi - lo:,}); review a shorter stretch")
+    sub = df.iloc[lo:hi]
+    sub.attrs = dict(df.attrs, timeframe=tf)
+    return sub
+
+
+def op_manual(req: dict) -> dict:
+    """Results for trades placed by hand in bar replay, with the same costs and rules as a backtest."""
+    from .manual import ManualError, ManualStrategy, clean_trades
+    t0 = time.time()
+    tf = _tf(req)
+    try:
+        trades = clean_trades(req.get("trades") or [])
+        if not trades:
+            raise ApiError("There are no trades to review yet. Buy or sell in replay first.")
+        df = _manual_window(req, tf, trades)
+        s = ManualStrategy(trades, name=str(req.get("name") or "")[:80] or None)
+        st = _settings(s, req)
+        st.process_orders_on_close = True    # you decided at the bar's close, so that is where the order fills
+        st.pyramiding = 1
+        res = run(s, df, st)
+    except ManualError as e:
+        raise ApiError(str(e)) from None
+    info = {"name": s.name, "description": f"{len(trades)} trades you placed by hand in bar replay.", "timeframe": tf,
+            "params": {}, "labels": {}, "evidence": None, "evidence_level": "Your trades",
+            "fingerprint": s.fingerprint(), "manual": True}
+    return _payload(s, st, tf, df, res, t0, req, info)
+
+
+def op_learn(req: dict) -> dict:
+    """Find the chart conditions behind manual trades and write them up as a strategy card."""
+    from .learn import learn, reproduction
+    from .manual import ManualError, clean_trades
+    t0 = time.time()
+    tf = _tf(req)
+    try:
+        trades = clean_trades(req.get("trades") or [])
+    except ManualError as e:
+        raise ApiError(str(e)) from None
+    if len(trades) < 3:
+        raise ApiError("Take at least 3 trades in replay before building a strategy from them.")
+    if any(t["entry_price"] is None for t in trades):
+        raise ApiError("Each trade needs its entry_price")
+    seen = req.get("seen") or []
+    if not isinstance(seen, list) or len(seen) > 100:
+        raise ApiError("seen must be a list of [start, end] time ranges")
+    seen = [(_unix(a, "seen start"), _unix(b, "seen end")) for a, b in seen] or \
+        [(min(t["entry_time"] for t in trades), max((t["exit_time"] or t["entry_time"]) for t in trades))]
+    df = _data(tf)
+    secs = df.index.as_unit("s").asi8
+    lo = max(0, int(np.searchsorted(secs, min(a for a, _ in seen))) - 2500)   # warm-up and a base rate sample
+    hi = int(np.searchsorted(secs, max(b for _, b in seen), side="right")) + 1
+    if hi - lo > MAX_BARS:
+        raise ApiError("These sessions span too many bars; learn from fewer sessions at a time")
+    sub = df.iloc[lo:hi]
+    sub.attrs = dict(df.attrs, timeframe=tf)
+    try:
+        out = learn(sub, trades, seen, tf, name=str(req.get("name") or "")[:80] or None)
+    except ValueError as e:
+        raise ApiError(str(e)) from None
+    if out.get("card"):
+        out["reproduction"] = reproduction(sub, out["card"], trades, seen)
+        card = yaml.safe_load(out["card"])
+        s = RuleStrategy(card)
+        st = Settings.realistic(**(card.get("settings") or {}))
+        _, dfw = _window({"timeframe": tf}, s)
+        res = run(s, dfw, st)
+        m = res.metrics
+        out["backtest"] = {"start": str(dfw.index[0].date()), "end": str(dfw.index[-1].date()),
+                           **{k: _num(m.get(k)) for k in ("net_profit", "total_trades", "profit_factor",
+                                                         "max_drawdown_pct", "percent_profitable")}}
+    out["elapsed_ms"] = int((time.time() - t0) * 1000)
+    return out
+
+
+OPS = {"strategies": op_strategies, "backtest": op_backtest, "validate": op_validate, "pine": op_pine,
+       "bars": op_bars, "manual": op_manual, "learn": op_learn}
 
 
 def handle(op: str, req: dict | None) -> tuple[int, dict]:

@@ -545,7 +545,7 @@ test("a11y: keyboard reaches every control in a sensible order", async () => {
   eq(await p.evaluate(() => document.activeElement.id), "results", "skip link jumps to results");
   const seen = new Set();
   await p.focus("#strategy");
-  for (let i = 0; i < 60; i++) { await p.keyboard.press("Tab"); seen.add(await p.evaluate(() => document.activeElement.id || document.activeElement.dataset.tf || document.activeElement.dataset.tab || document.activeElement.tagName)); }
+  for (let i = 0; i < 120; i++) { await p.keyboard.press("Tab"); seen.add(await p.evaluate(() => document.activeElement.id || document.activeElement.dataset.tf || document.activeElement.dataset.tab || document.activeElement.tagName)); }
   for (const want of ["run", "4h", "start", "p-capital", "t-overview"]) assert(seen.has(want), `Tab reaches ${want}`);
   await close(p);
 });
@@ -604,6 +604,329 @@ test("api: contract, errors and speed", async () => {
   await close(p);
 });
 
+// ------------------------------------------------------------------ chart tools: indicators, drawings, bar replay
+const { execFileSync } = require("child_process");
+function pyReference() {
+  const script = `
+import json
+from goldlab.webapi import _data
+from goldlab import indicators as ta
+d = _data("1h").iloc[:3000]
+o, h, l, c, v = d.open, d.high, d.low, d.close, d.volume
+L = lambda s: [None if x != x else float(x) for x in s.to_numpy(float)]
+st, sd = ta.supertrend(h, l, c, 3, 10)
+print(json.dumps({"t": [int(x) for x in d.index.as_unit("s").asi8], "o": L(o), "h": L(h), "l": L(l), "c": L(c), "v": L(v),
+  "ema": L(ta.ema(c, 20)), "sma": L(ta.sma(c, 50)), "wma": L(ta.wma(c, 20)), "rsi": L(ta.rsi(c, 14)), "atr": L(ta.atr(h, l, c, 14)),
+  "bbu": L(ta.bb(c, 20, 2)[1]), "bbl": L(ta.bb(c, 20, 2)[2]), "macd": L(ta.macd(c, 12, 26, 9)[0]), "macds": L(ta.macd(c, 12, 26, 9)[1]),
+  "stoch": L(ta.sma(ta.stoch(c, h, l, 14), 3)), "adx": L(ta.adx(h, l, c, 14)), "pdi": L(ta.dmi(h, l, c, 14, 14)[0]),
+  "cci": L(ta.cci((h + l + c) / 3, 20)), "st": L(st), "sd": L(sd), "kcu": L(ta.keltner(h, l, c, 20, 1.5)[1]),
+  "dch": L(ta.highest(h, 20)), "vwap": L(ta.vwap(h, l, c, v))}))
+`;
+  return JSON.parse(execFileSync("python3", ["-c", script], { cwd: ROOT, maxBuffer: 64 << 20 }).toString());
+}
+
+test("indicators: chart maths matches the Python engine (14 indicators)", async () => {
+  const TA = require(path.join(ROOT, "web", "ta.js"));
+  const ref = pyReference(), d = { t: ref.t, o: ref.o, h: ref.h, l: ref.l, c: ref.c, v: ref.v };
+  const st = TA.supertrend(d.h, d.l, d.c, 3, 10), dmi = TA.dmi(d.h, d.l, d.c, 14, 14), mac = TA.macd(d.c, 12, 26, 9);
+  const mine = { ema: TA.ema(d.c, 20), sma: TA.sma(d.c, 50), wma: TA.wma(d.c, 20), rsi: TA.rsi(d.c, 14), atr: TA.atr(d.h, d.l, d.c, 14),
+    bbu: TA.bb(d.c, 20, 2).upper, bbl: TA.bb(d.c, 20, 2).lower, macd: mac.macd, macds: mac.signal, stoch: TA.stoch(d.c, d.h, d.l, 14, 3, 3).k,
+    adx: dmi.adx, pdi: dmi.plus, cci: TA.cci(d.c.map((x, i) => (d.h[i] + d.l[i] + x) / 3), 20), st: st.line, sd: st.dir,
+    kcu: TA.keltner(d.h, d.l, d.c, 20, 1.5).upper, dch: TA.donchian(d.h, d.l, 20).upper, vwap: TA.vwap(d.t, d.h, d.l, d.c, d.v) };
+  const report = [];
+  for (const k of Object.keys(mine)) {
+    let worst = 0, nanMismatch = 0;
+    for (let i = 0; i < ref.t.length; i++) {
+      const a = ref[k][i], b = mine[k][i], bn = b !== b || b === null || b === undefined;
+      if (a === null || bn) { if ((a === null) !== bn) nanMismatch++; continue; }
+      worst = Math.max(worst, Math.abs(a - b) / Math.max(1, Math.abs(a)));
+    }
+    if (worst > 1e-9 || nanMismatch) report.push(`${k}: worst rel diff ${worst.toExponential(2)}, warm-up mismatch on ${nanMismatch} bars`);
+  }
+  assert(!report.length, "indicators differ from Python: " + report.join("; "));
+});
+
+test("indicators: add, change settings, hide, remove, panes, saved after reload", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await p.click("#ind-btn");
+  assert(await p.evaluate(() => document.getElementById("ind-dialog").open), "menu opens");
+  await p.fill("#ind-search", "relative");
+  eq(await p.$$eval("#ind-list button", b => b.map(x => x.dataset.type).join()), "rsi", "search narrows the list");
+  await p.click('#ind-list button[data-type="rsi"]');
+  await p.fill("#ind-search", "");
+  await p.click('#ind-list button[data-type="ema"]'); await p.click('#ind-list button[data-type="bb"]'); await p.click('#ind-list button[data-type="macd"]');
+  await p.click("#ind-close");
+  eq(await p.evaluate(() => GSL.price.panes().length), 3, "price pane + RSI pane + MACD pane");
+  const ema = await p.evaluate(() => {
+    const ind = GSL.indicators.list().find(x => x.type === "ema"), l = GSL.indicators.live[ind.id];
+    const ref = TA.ema(GSL.bars.c, 20), n = GSL.bars.c.length;
+    return { id: ind.id, last: l.values.value[n - 1], ref: ref[n - 1], points: l.series.value.data().length, finite: ref.filter(x => x === x).length };
+  });
+  eq(ema.last, ema.ref, "EMA value matches ta.js"); eq(ema.points, ema.finite, "one point per bar after warm-up");
+  assert(/EMA 20/.test(await p.textContent("#ind-legend")) && /RSI 14/.test(await p.textContent("#ind-legend")), "legend lists indicators with values");
+  // settings: EMA 20 -> 50
+  await p.click(`#ind-legend [data-id="${ema.id}"] button[data-act="settings"]`);
+  await p.fill('#ind-set-fields input[data-k="length"]', "0"); await p.click('#ind-set-form button[type="submit"]');
+  assert(/between 1 and 1000/.test(await p.textContent("#ind-set-error")), "out-of-range length is refused");
+  await p.fill('#ind-set-fields input[data-k="length"]', "50"); await p.click('#ind-set-form button[type="submit"]');
+  assert(/EMA 50/.test(await p.textContent("#ind-legend")), "legend shows the new length");
+  eq(await p.evaluate(id => { const n = GSL.bars.c.length; return GSL.indicators.live[id].values.value[n - 1] === TA.ema(GSL.bars.c, 50)[n - 1]; }, ema.id), true, "values recomputed");
+  // hide and remove
+  await p.click(`#ind-legend [data-id="${ema.id}"] button[data-act="toggle"]`);
+  eq(await p.evaluate(id => !GSL.indicators.live[id], ema.id), true, "hidden indicator has no series");
+  const rsiId = await p.evaluate(() => GSL.indicators.list().find(x => x.type === "rsi").id);
+  await p.click(`#ind-legend [data-id="${rsiId}"] button[data-act="remove"]`);
+  eq(await p.evaluate(() => GSL.price.panes().length), 2, "removing RSI removes its pane");
+  await p.reload(); await settled(p);
+  const after = await p.evaluate(() => GSL.indicators.list().map(x => x.type + (x.visible === false ? "-off" : "")).join());
+  eq(after, "ema-off,bb,macd", "indicators are remembered");
+  assert(/EMA 50/.test(await p.textContent("#ind-legend")), "settings are remembered");
+  await close(p);
+});
+
+async function chartPoint(p, t, price) {
+  return p.evaluate(([t, price]) => {
+    const r = document.getElementById("chart").getBoundingClientRect();
+    return { x: r.left + GSL.price.timeScale().logicalToCoordinate(GSL.timeToLogical(t)), y: r.top + GSL.candles.priceToCoordinate(price) };
+  }, [t, price]);
+}
+async function barAt(p, frac) {
+  return p.evaluate(frac => {
+    const r = GSL.price.timeScale().getVisibleLogicalRange(), i = Math.round(r.from + (r.to - r.from) * frac);
+    return { t: GSL.bars.t[i], c: GSL.bars.c[i], i: i };
+  }, frac);
+}
+
+test("drawings: every tool draws; select, drag, recolour, delete, undo; saved and kept across timeframes", async () => {
+  const p = await newPage({ viewport: { width: 1440, height: 950 } });
+  await open(p, "ema_trend_4h");
+  const box = await p.locator("#chart").boundingBox();
+  const at = (fx, fy) => [box.x + box.width * fx, box.y + box.height * fy];
+  const plan = [["trend", [0.30, 0.45], [0.45, 0.30]], ["ray", [0.30, 0.70], [0.40, 0.60]], ["rect", [0.50, 0.40], [0.60, 0.55]],
+    ["fib", [0.15, 0.80], [0.25, 0.45]], ["hline", [0.40, 0.50]], ["vline", [0.70, 0.50]], ["long", [0.62, 0.50]], ["short", [0.75, 0.40]], ["text", [0.55, 0.75]]];
+  for (const [tool, a, b] of plan) {
+    await p.click(`#draw-rail button[data-tool="${tool}"]`);
+    eq(await p.getAttribute(`#draw-rail button[data-tool="${tool}"]`, "aria-pressed"), "true", tool + " button pressed");
+    await p.mouse.click(...at(...a));
+    if (b) { await p.mouse.move(...at(...b), { steps: 3 }); await p.mouse.click(...at(...b)); }
+    if (tool === "text") { await p.fill("#text-input", "Breakout zone"); await p.click('#text-form button[type="submit"]'); }
+    eq(await p.evaluate(() => GSL.draw.state.tool), "cursor", tool + ": back to the select tool after drawing");
+  }
+  const types = await p.evaluate(() => GSL.draw.list().map(d => d.type).join());
+  eq(types, plan.map(x => x[0]).join(), "one drawing per tool");
+  eq(await p.evaluate(() => GSL.draw.list().find(d => d.type === "text").text), "Breakout zone", "text saved");
+  // the long position defaults to a 1.5 ATR stop and a 2R target
+  const lp = await p.evaluate(() => { const d = GSL.draw.list().find(x => x.type === "long"); return [d.pts[0].p, d.pts[1].p, d.pts[2].p]; });
+  assert(lp[1] > lp[0] && lp[2] < lp[0] && Math.abs((lp[1] - lp[0]) / (lp[0] - lp[2]) - 2) < 1e-6, "long position: target above, stop below, 2R");
+  // drag the trend line's end point
+  const tr = await p.evaluate(() => GSL.draw.list().find(d => d.type === "trend").pts[1]);
+  const from = await chartPoint(p, tr.t, tr.p);
+  await p.mouse.move(from.x, from.y); await p.mouse.down(); await p.mouse.move(from.x + 60, from.y + 40, { steps: 6 }); await p.mouse.up();
+  const moved = await p.evaluate(() => GSL.draw.list().find(d => d.type === "trend").pts[1]);
+  assert(moved.t > tr.t && moved.p < tr.p, "dragging the handle moves the end point");
+  const range = await p.evaluate(() => GSL.price.timeScale().getVisibleLogicalRange());
+  // the chart didn't pan while dragging
+  await p.mouse.move(from.x + 300, from.y + 100);
+  const range2 = await p.evaluate(() => GSL.price.timeScale().getVisibleLogicalRange());
+  eq(Math.round(range2.from), Math.round(range.from), "chart did not pan during the drag");
+  // recolour, delete, undo
+  assert(await p.isVisible("#sel-tools"), "selection toolbar shows");
+  await p.click('#sel-colors button[data-color="#b23a32"]');
+  eq(await p.evaluate(() => GSL.draw.list().find(d => d.type === "trend").color), "#b23a32", "colour changed");
+  await p.keyboard.press("Delete");
+  assert(!(await p.evaluate(() => GSL.draw.list().some(d => d.type === "trend"))), "Delete removes the selected drawing");
+  await p.keyboard.press("Control+z");
+  assert(await p.evaluate(() => GSL.draw.list().some(d => d.type === "trend")), "Ctrl+Z brings it back");
+  await p.click("#clear-draw"); eq(await p.evaluate(() => GSL.draw.list().length), 0, "clear all");
+  await p.click("#undo-draw"); eq(await p.evaluate(() => GSL.draw.list().length), plan.length, "undo clear all");
+  // Escape cancels a half-drawn line
+  await p.click('#draw-rail button[data-tool="trend"]'); await p.mouse.click(...at(0.2, 0.2)); await p.keyboard.press("Escape");
+  eq(await p.evaluate(() => GSL.draw.list().length), plan.length, "Escape cancels a pending drawing");
+  // saved; and anchored in time so they survive a timeframe change
+  await p.reload(); await settled(p);
+  eq(await p.evaluate(() => GSL.draw.list().length), plan.length, "drawings are remembered");
+  await p.click('#tf button[data-tf="1h"]'); await afterChange(p);
+  eq(await p.evaluate(() => GSL.draw.list().length), plan.length, "drawings kept on another timeframe");
+  await close(p);
+});
+
+async function startReplay(p, date) {
+  await p.click("#replay-btn");
+  assert(await p.isVisible("#rp-pick"), "replay asks where to start");
+  await p.fill("#rp-date", date); await p.click("#rp-go");
+  await p.waitForFunction(() => GSL.replay.state.active, null, { timeout: 30000 });
+}
+test("replay: hides the future, steps bar by bar, locks the backtest controls", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await p.click("#ind-btn"); await p.click('#ind-list button[data-type="ema"]'); await p.click("#ind-close");
+  await startReplay(p, "2025-06-02");
+  const s = await p.evaluate(() => {
+    const R = GSL.replay.state, t = R.bars.t[R.cur], ind = Object.values(GSL.indicators.live)[0].series.value.data();
+    return { cur: R.cur, t: t, last: GSL.candles.data().slice(-1)[0].time, n: GSL.candles.data().length, indLast: ind[ind.length - 1].time,
+      plots: GSL.state.plotSeries.every(x => x.data().length === 0), locked: document.getElementById("run").disabled && document.getElementById("strategy").disabled };
+  });
+  eq(s.t, Date.UTC(2025, 5, 2) / 1000, "starts at the chosen date");
+  eq(s.last, s.t, "no candle after the start bar"); eq(s.n, s.cur + 1, "only past bars are on the chart");
+  assert(s.indLast <= s.t, "indicators stop at the start bar too"); assert(s.plots, "strategy lines are hidden (they would show the future)");
+  assert(s.locked, "backtest controls are locked during replay");
+  await p.click("#rp-step");
+  await p.locator("body").focus(); await p.evaluate(() => document.activeElement.blur()); await p.keyboard.press("ArrowRight");
+  const s2 = await p.evaluate(() => ({ cur: GSL.replay.state.cur, last: GSL.candles.data().slice(-1)[0].time, t: GSL.replay.state.bars.t[GSL.replay.state.cur] }));
+  eq(s2.cur, s.cur + 2, "Next bar button and → key each add one bar"); eq(s2.last, s2.t, "new bar drawn");
+  assert(/2025-06-02/.test(await p.textContent("#rp-time")), "current replay time shown");
+  // play runs on its own; pause stops it
+  await p.selectOption("#rp-speed", "10"); await p.click("#rp-play"); await p.waitForTimeout(800); await p.click("#rp-play");
+  const played = await p.evaluate(() => GSL.replay.state.cur); assert(played > s2.cur + 3, "Play steps forward on its own");
+  await p.waitForTimeout(400); eq(await p.evaluate(() => GSL.replay.state.cur), played, "Pause stops it");
+  await p.click("#rp-exit");
+  assert(!(await p.evaluate(() => GSL.replayActive)) && !(await p.isDisabled("#run")), "Exit restores the backtest");
+  eq(await p.evaluate(() => GSL.candles.data().length), await p.evaluate(() => window.__gsl.result.candles.length), "full chart restored");
+  await close(p);
+});
+
+test("replay: buy, sell, stops, targets and closes fill exactly like the engine; review matches", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await startReplay(p, "2025-06-02");
+  const R = () => p.evaluate(() => ({ pos: GSL.replay.state.pos, n: GSL.replay.state.session.trades.length }));
+  const stepUntilFlat = async max => { for (let i = 0; i < max && (await R()).pos; i++) await p.click("#rp-step"); };
+  // 1) buy with the suggested stop and target and let one of them hit
+  await p.fill("#rp-note", "breakout above the range");
+  await p.click("#rp-buy");
+  assert((await R()).pos && await p.isVisible("#rp-position"), "position opened");
+  eq(await p.evaluate(() => GSL.draw.state.orders.map(o => o.key).join()), "entry,sl,tp", "entry, stop and target lines drawn");
+  await stepUntilFlat(80);
+  if ((await R()).pos) await p.click("#rp-close");
+  // 2) sell with no target, move the stop through the form, then close by hand
+  await p.fill("#rp-tp", ""); await p.click("#rp-sell");
+  for (let i = 0; i < 3; i++) await p.click("#rp-step");
+  if ((await R()).pos) {
+    const newSl = await p.evaluate(() => { const R = GSL.replay.state; return Math.round((R.bars.c[R.cur] + R.bars.sp[R.cur] + 80) * 100) / 100; });
+    await p.fill("#rp-pos-sl", String(newSl)); await p.click('#rp-position button[type="submit"]');
+    eq(await p.evaluate(() => GSL.replay.state.pos.sl), newSl, "stop moved");
+    await p.click("#rp-step"); if ((await R()).pos) await p.click("#rp-close");
+  }
+  // 3) drag a stop line on the chart
+  await p.fill("#rp-sl", "40"); await p.fill("#rp-tp", "80"); await p.click("#rp-buy");
+  const sl = await p.evaluate(() => GSL.replay.state.pos.sl);
+  const pt = await chartPoint(p, await p.evaluate(() => GSL.replay.state.bars.t[GSL.replay.state.cur]), sl);
+  await p.mouse.move(pt.x - 200, pt.y); await p.mouse.down(); await p.mouse.move(pt.x - 200, pt.y + 25, { steps: 5 }); await p.mouse.up();
+  const sl2 = await p.evaluate(() => GSL.replay.state.pos.sl);
+  assert(sl2 < sl, `dragging the stop line moves the stop (${sl} -> ${sl2})`);
+  await p.click("#rp-step"); await p.click("#rp-step"); if ((await R()).pos) await p.click("#rp-close");
+  // 4) quick round trip with Shift+B / Shift+C
+  await p.evaluate(() => document.activeElement.blur());
+  await p.keyboard.press("Shift+B"); assert((await R()).pos, "Shift+B buys"); await p.keyboard.press("ArrowRight"); await p.keyboard.press("Shift+C");
+  const client = await p.evaluate(() => GSL.replay.state.session.trades);
+  assert(client.length >= 4, "four trades recorded (got " + client.length + ")");
+  eq(client[0].note, "breakout above the range", "note saved with the trade");
+  assert(/net/.test(await p.textContent("#rp-stats")), "session stats shown");
+  await p.click("#rp-finish");
+  await p.waitForFunction(() => window.__gsl.result && window.__gsl.result.strategy.manual, null, { timeout: 45000 });
+  const server = await p.evaluate(() => window.__gsl.result.trades);
+  eq(server.length, client.length, "same number of trades after review");
+  const kind = { SL: "stop", TP: "target", Close: "close" };
+  client.forEach((c, i) => {
+    const s = server[i];
+    assert(Math.abs(s.entry_price - c.entry_price) < 1e-6 && Math.abs(s.exit_price - c.exit_price) < 1e-6, `trade ${i + 1}: prices match (${c.entry_price}/${c.exit_price} vs ${s.entry_price}/${s.exit_price})`);
+    assert(Math.abs(s.pnl - c.pnl) < 1e-4, `trade ${i + 1}: P&L matches (${c.pnl} vs ${s.pnl})`);
+    eq(s.exit_time, c.exit_time, `trade ${i + 1}: exit time`); eq(s.exit_kind, kind[c.exit_by], `trade ${i + 1}: exit type`);
+  });
+  assert(await p.isVisible("#mode-note") && /replay session/i.test(await p.textContent("#mode-note")), "results say they are from replay");
+  assert(!(await p.isDisabled("#run")), "controls unlocked after review");
+  await p.click('.tabs button[data-tab="trades"]');
+  assert(/Take profit|Stop loss|Closed/.test(await p.textContent("#trades")), "trade list says how each trade ended");
+  await p.click("#mode-back"); await settled(p);
+  assert(!(await p.evaluate(() => window.__gsl.result.strategy.manual)) && await p.isHidden("#mode-note"), "back to the strategy backtest");
+  await close(p);
+});
+
+test("replay: sessions are saved, exported, imported and resumed", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await startReplay(p, "2025-03-03");
+  await p.click("#rp-buy"); await p.click("#rp-step"); await p.click("#rp-step");
+  if (await p.evaluate(() => !!GSL.replay.state.pos)) await p.click("#rp-close");
+  await p.click("#rp-sell"); await p.click("#rp-step");
+  const before = await p.evaluate(() => ({ id: GSL.replay.state.session.id, t: GSL.replay.state.session.current_time, n: GSL.replay.state.session.trades.length, pos: !!GSL.replay.state.pos }));
+  await p.click("#rp-exit");
+  await p.click("#sessions-btn");
+  assert(await p.isVisible(`#sessions-list tr[data-id="${before.id}"]`), "session listed");
+  const [dl] = await Promise.all([p.waitForEvent("download"), p.click(`#sessions-list tr[data-id="${before.id}"] button[data-act="export"]`)]);
+  const file = await dl.path(), json = JSON.parse(fs.readFileSync(file, "utf8"));
+  eq(json.format, "goldlab-replay-session", "export format"); eq(json.trades.length, before.n, "exported trades");
+  p.once("dialog", d => d.accept());
+  await p.click(`#sessions-list tr[data-id="${before.id}"] button[data-act="delete"]`);
+  eq(await p.$$eval("#sessions-list tr[data-id]", r => r.length), 0, "deleted");
+  await p.setInputFiles("#sessions-import", file);
+  await p.waitForSelector("#sessions-list tr[data-id]");
+  await p.click('#sessions-list tr[data-id] button[data-act="resume"]');
+  await p.waitForFunction(() => GSL.replay.state.active, null, { timeout: 30000 });
+  const after = await p.evaluate(() => ({ t: GSL.replay.state.bars.t[GSL.replay.state.cur], n: GSL.replay.state.session.trades.length, pos: !!GSL.replay.state.pos }));
+  eq(after.t, before.t, "resumes at the bar you stopped on"); eq(after.n, before.n, "trades restored"); eq(after.pos, before.pos, "open position restored");
+  await p.click("#rp-exit");
+  await close(p);
+});
+
+test("replay: builds a strategy from your trades and backtests it", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  // a session whose 1h entries all follow one rule: close crosses above the 20 EMA while above the 200 EMA
+  await p.evaluate(async () => {
+    const b = await GSL.api("bars", { timeframe: "1h", at: "2024-01-02", before: 400, after: 1500 });
+    const e20 = TA.ema(b.c, 20), e200 = TA.ema(b.c, 200), atr = TA.atr(b.h, b.l, b.c, 14), trades = [];
+    let busy = -1;
+    for (let i = b.index; i < b.t.length - 12; i++) {
+      if (i <= busy || !(b.c[i] > e20[i] && b.c[i - 1] <= e20[i - 1] && b.c[i] > e200[i])) continue;
+      const e = b.c[i] + b.sp[i] + 0.05, sl = e - 1.5 * atr[i];
+      trades.push({ id: "M" + (trades.length + 1), side: "long", lots: 0.1, entry_time: b.t[i], entry_price: e, sl: sl, tp: e + 2 * (e - sl),
+        exit_time: b.t[i + 10], exit_price: b.c[i + 10], exit_by: "Close", pnl: 0, r: null, note: "EMA pullback", mods: [] });
+      busy = i + 10;
+    }
+    localStorage.setItem("gsl:sessions", JSON.stringify([{ format: "goldlab-replay-session", version: 1, id: "stest", name: "Replay 1h test", created: new Date().toISOString(),
+      timeframe: "1h", preset: "realistic", settings: {}, start_time: b.t[b.index], current_time: b.t[b.t.length - 1], trades: trades, position: null, swap: 0, events: [] }]));
+  });
+  await p.click("#sessions-btn");
+  await p.click('#sessions-list tr[data-id="stest"] button[data-act="learn"]');
+  await p.waitForFunction(() => document.getElementById("learn-dialog").open, null, { timeout: 60000 });
+  const text = await p.textContent("#learn-body");
+  assert(/Close crosses above the 20 EMA/.test(text) && /Price above the 200 EMA/.test(text), "finds the rule behind the entries: " + text.slice(0, 300));
+  assert(/repeats \d+ of your \d+ entries/.test(text), "says how many entries it reproduces");
+  await axe(p, "learn dialog");
+  await p.click("#learn-run");
+  await p.waitForFunction(() => window.__gsl.result && /My setup/.test(window.__gsl.result.strategy.name) && document.getElementById("busy").hidden, null, { timeout: 60000 });
+  eq(await p.evaluate(() => window.__gsl.tf), "1h", "switched to the session's timeframe");
+  assert(/crossover\(close, ema\(close, 20\)\)/.test(await p.inputValue("#yaml")), "card loaded in the rules editor");
+  assert(await p.evaluate(() => window.__gsl.result.metrics.total_trades) > 0, "the learned strategy trades");
+  await close(p);
+});
+
+test("chart tools: phone layout, tap targets and accessibility", async () => {
+  for (const w of [320, 390]) {
+    const p = await newPage({ viewport: { width: w, height: 844 }, mobile: true });
+    await open(p, "ema_trend_4h");
+    await p.click("#draw-toggle");
+    assert(await p.isVisible("#draw-rail"), `${w}px: Draw shows the tools`);
+    const small = await p.$$eval(".chart-head .btn, #draw-rail button", els => els.filter(e => e.offsetParent).map(e => { const r = e.getBoundingClientRect(); return [e.id || e.dataset.tool, Math.round(r.width), Math.round(r.height)]; }).filter(x => x[1] < 44 || x[2] < 44));
+    assert(!small.length, `${w}px: chart tool targets under 44px: ${JSON.stringify(small)}`);
+    await startReplay(p, "2025-06-02");
+    await noHorizontalScroll(p, `${w}px replay`);
+    const bs = await p.$$eval("#rp-buy, #rp-sell, #rp-step, #rp-play", els => els.map(e => Math.round(e.getBoundingClientRect().height)));
+    assert(bs.every(h => h >= 44), `${w}px: replay buttons at least 44px tall (${bs})`);
+    if (w === 390) { await axe(p, "replay dock (phone)"); }
+    await close(p);
+  }
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await p.click("#ind-btn"); await axe(p, "indicators dialog"); await p.click('#ind-list button[data-type="rsi"]'); await p.click("#ind-close");
+  await axe(p, "chart with indicator legend");
+  await p.click("#sessions-btn"); await axe(p, "sessions dialog"); await p.click("#sessions-close");
+  await startReplay(p, "2025-06-02"); await p.click("#rp-buy"); await axe(p, "replay with a position");
+  await close(p);
+});
+
 // ------------------------------------------------------------------ runner
 function waitFor(url, ms) {
   const until = Date.now() + ms;
@@ -629,7 +952,11 @@ function waitFor(url, ms) {
     if (ONLY.length && !ONLY.some(w => t.name.toLowerCase().includes(w.toLowerCase()))) continue;
     const s = Date.now();
     try { await t.fn(); results.push([t.name, true]); console.log(`  PASS  ${t.name}  (${((Date.now() - s) / 1000).toFixed(1)}s)`); }
-    catch (e) { results.push([t.name, false, e.message]); console.log(`  FAIL  ${t.name}\n        ${e.message.split("\n")[0].slice(0, 600)}`); }
+    catch (e) {
+      results.push([t.name, false, e.message]);
+      const where = (e.stack || "").split("\n").find(l => l.includes("run.cjs:")) || "";
+      console.log(`  FAIL  ${t.name}\n        ${e.message.split("\n")[0].slice(0, 600)}\n        ${where.trim()}`);
+    }
   }
   await browser.close();
   if (server) server.kill();
