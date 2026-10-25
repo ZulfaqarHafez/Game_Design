@@ -1,0 +1,4 @@
+# Python packages for the Vercel function api/lab.py (the website's backtester API)
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gold Strategy Lab</title>
+<meta name="description" content="Backtest gold (XAUUSD) strategies with TradingView's Strategy Tester rules and realistic costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./" aria-label="Gold Strategy Lab home"><span class="mark">Au</span><span class="brand-name">Gold Strategy Lab</span></a>
+  <div class="top-strategy">
+    <label class="sr" for="strategy">Strategy</label>
+    <select id="strategy"></select>
+  </div>
+  <nav class="top-links">
+    <a href="library.html">Library</a>
+    <a href="research.html">Research</a>
+  </nav>
+  <button id="run" class="btn primary run" type="button"><span class="run-label">Run backtest</span></button>
+</header>
+
+<div class="toolbar" role="toolbar" aria-label="Chart options">
+  <div class="seg" id="tf" role="radiogroup" aria-label="Timeframe"></div>
+  <div class="seg" id="range" role="radiogroup" aria-label="Date range">
+    <button type="button" data-days="90">3M</button><button type="button" data-days="180">6M</button>
+    <button type="button" data-days="365">1Y</button><button type="button" data-days="730">2Y</button>
+    <button type="button" data-days="0">All</button>
+  </div>
+  <div class="dates">
+    <label>From <input type="date" id="start"></label>
+    <label>To <input type="date" id="end"></label>
+  </div>
+  <div class="seg" id="preset" role="radiogroup" aria-label="Cost model">
+    <button type="button" data-preset="realistic" title="Real bid/ask spread, commission, slippage, swap">Realistic costs</button>
+    <button type="button" data-preset="tradingview" title="No spread or costs, like a default TradingView strategy()">TradingView</button>
+  </div>
+  <button id="open-settings" class="btn ghost settings-btn" type="button">Settings</button>
+</div>
+
+<main class="layout">
+  <section class="chart-area" aria-label="Price chart">
+    <div class="legend" id="legend"></div>
+    <div id="chart"></div>
+    <div class="chart-note" id="chart-note"></div>
+    <div class="busy" id="busy" hidden><span></span></div>
+  </section>
+
+  <aside class="panel" id="panel" aria-label="Strategy settings">
+    <div class="panel-head">
+      <h2>Settings</h2>
+      <button class="btn ghost close-panel" id="close-settings" type="button">Done</button>
+    </div>
+    <details open class="block" id="about-block">
+      <summary>About this strategy</summary>
+      <div id="about"></div>
+    </details>
+    <details open class="block">
+      <summary>Inputs</summary>
+      <div class="fields" id="inputs"></div>
+      <button class="btn link" id="reset-inputs" type="button">Reset to defaults</button>
+    </details>
+    <details open class="block">
+      <summary>Account, sizing and costs</summary>
+      <div class="fields" id="props">
+        <label>Account size ($)<input type="number" id="p-capital" min="100" step="100" inputmode="decimal"></label>
+        <label>Position size
+          <select id="p-qtytype">
+            <option value="risk_percent">Risk % of equity per trade</option>
+            <option value="lots">Fixed lots</option>
+            <option value="percent_of_equity">% of equity (notional)</option>
+          </select></label>
+        <label><span id="p-qtyvalue-label">Risk %</span><input type="number" id="p-qtyvalue" min="0.01" step="0.1" inputmode="decimal"></label>
+        <label>Commission ($ per lot per side)<input type="number" id="p-comm" min="0" step="0.5" inputmode="decimal"></label>
+        <label>Slippage (ticks of $0.01)<input type="number" id="p-slip" min="0" step="1" inputmode="numeric"></label>
+        <label>Spread
+          <select id="p-spread">
+            <option value="data">Real bid/ask from data</option>
+            <option value="fixed">Fixed</option>
+            <option value="none">None (TradingView)</option>
+          </select></label>
+        <label id="p-spreadfixed-wrap">Fixed spread ($)<input type="number" id="p-spreadfixed" min="0" step="0.05" inputmode="decimal"></label>
+        <label>Swap long ($/lot/night)<input type="number" id="p-swapl" step="1" inputmode="decimal"></label>
+        <label>Swap short ($/lot/night)<input type="number" id="p-swaps" step="1" inputmode="decimal"></label>
+        <label>Inside each bar
+          <select id="p-intrabar">
+            <option value="tv">TradingView path (O→nearer extreme→other→C)</option>
+            <option value="pessimistic">Pessimistic (stop before target)</option>
+          </select></label>
+      </div>
+    </details>
+    <details class="block" id="rules-block">
+      <summary>Rules (strategy card)</summary>
+      <p class="hint">Edit the rules in plain expressions, then run. Saved strategies stay in this browser.</p>
+      <details class="cheat"><summary>What can I write?</summary>
+        <p class="hint"><b>Sections:</b> <code>params</code> (numbers you tune), <code>vars</code> (named expressions),
+        <code>long</code>/<code>short</code> with <code>when</code>, <code>order</code> (market, stop, limit), <code>price</code>,
+        <code>sl</code>/<code>tp</code> (prices), <code>sl_dist</code>/<code>tp_dist</code> (distances), <code>tp_r</code> (target as a multiple of risk),
+        <code>trail_dist</code>; <code>exit</code> with <code>long_when</code>, <code>short_when</code>, <code>when</code>, <code>max_bars</code>.</p>
+        <p class="hint"><b>Indicators:</b> sma ema rma wma hma rsi atr stdev highest lowest change roc cci stoch bb_upper bb_lower bb_mid
+        kc_upper kc_lower macd macd_signal macd_hist adx plus_di minus_di supertrend supertrend_dir vwap.
+        <b>Signals:</b> crossover crossunder cross barssince valuewhen. <b>Time:</b> in_session("07:00-11:00", "Europe/London"),
+        session_high(...), session_low(...), hour(tz), weekday(tz). <b>Higher timeframe:</b> security("1d", "atr(14)").
+        <b>Previous bar:</b> close[1]. <b>Position:</b> is_flat, is_long, is_short, bars_in_trade, trades_today.</p>
+      </details>
+      <textarea id="yaml" spellcheck="false" rows="16" aria-label="Strategy card YAML"></textarea>
+      <div class="row">
+        <button class="btn" id="apply-yaml" type="button">Run these rules</button>
+        <button class="btn ghost" id="save-yaml" type="button">Save to my strategies</button>
+        <button class="btn ghost" id="pine-btn" type="button">Pine Script</button>
+      </div>
+      <p class="hint" id="yaml-status" role="status"></p>
+    </details>
+  </aside>
+
+  <section class="tester" aria-label="Strategy tester results">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" data-tab="performance">Performance</button>
+      <button role="tab" data-tab="trades">Trades</button>
+      <button role="tab" data-tab="monthly">Monthly</button>
+      <button role="tab" data-tab="checks">Checks</button>
+      <button role="tab" data-tab="compare">Compare</button>
+    </div>
+    <div class="tab-body" id="tab-overview">
+      <div class="kpis" id="kpis"></div>
+      <div class="eq-legend"><span><i class="sw gold"></i>Strategy equity</span><span><i class="sw muted"></i>Buy &amp; hold gold</span><span><i class="sw down"></i>Drawdown</span></div>
+      <div id="equity"></div>
+      <p class="hint" id="run-note"></p>
+    </div>
+    <div class="tab-body" id="tab-performance" hidden></div>
+    <div class="tab-body" id="tab-trades" hidden>
+      <div class="row trades-tools">
+        <div class="seg small" id="trade-filter">
+          <button type="button" data-f="all" aria-pressed="true">All</button><button type="button" data-f="long">Long</button>
+          <button type="button" data-f="short">Short</button><button type="button" data-f="win">Wins</button><button type="button" data-f="loss">Losses</button>
+        </div>
+        <button class="btn ghost" id="csv" type="button">Download CSV</button>
+      </div>
+      <div class="scroll trades-scroll"><table class="trades" id="trades"></table></div>
+    </div>
+    <div class="tab-body" id="tab-monthly" hidden></div>
+    <div class="tab-body" id="tab-checks" hidden>
+      <p class="hint">Runs the readiness checklist: costs ×1.5, pessimistic fills, recent out-of-sample period, Monte Carlo,
+        parameter stability, look-ahead test and the Deflated Sharpe ratio. Takes 5–40 seconds.</p>
+      <button class="btn" id="run-checks" type="button">Run checklist</button>
+      <div id="checks"></div>
+    </div>
+    <div class="tab-body" id="tab-compare" hidden>
+      <p class="hint">Every run you make is listed here (kept in this browser). Trying many variants and keeping the best
+        is how backtests fool people: the checklist's Deflated Sharpe ratio corrects for it.</p>
+      <div class="scroll"><table class="compare" id="compare"></table></div>
+      <button class="btn link" id="clear-history" type="button">Clear history</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="pine-dialog" aria-label="Pine Script export">
+  <div class="dlg-head"><h2>Pine Script v6</h2><button class="btn ghost" id="pine-close" type="button">Close</button></div>
+  <p class="hint">Paste into TradingView's Pine Editor on an XAUUSD chart at the same timeframe, then compare with this
+    site's <b>TradingView</b> cost setting. Feeds differ slightly, so expect close, not identical, numbers.</p>
+  <pre><code id="pine-code"></code></pre>
+  <button class="btn" id="pine-copy" type="button">Copy code</button>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<footer class="foot">
+  Backtests describe the past and are not financial advice. Data: Dukascopy. Charts:
+  <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

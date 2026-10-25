@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gold Strategy Lab</title>
+<meta name="description" content="Backtests of gold (XAUUSD) strategies with TradingView rules and realistic costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1b1f24; --muted: #5d6670; --line: #dcdfd8;
+  --gold: #9a6b12; --gold-soft: #f1e3c2; --up: #1f7a52; --down: #b23a32; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif; --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11151b; --panel: #171c24; --ink: #e7e9ec; --muted: #98a1ab; --line: #2a313b;
+  --gold: #e0b252; --gold-soft: #3a3020; --up: #3fb984; --down: #f0675d; --up-soft: rgba(63,185,132,.18); --down-soft: rgba(240,103,93,.18);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11151b; --panel: #171c24; --ink: #e7e9ec; --muted: #98a1ab; --line: #2a313b;
+  --gold: #e0b252; --gold-soft: #3a3020; --up: #3fb984; --down: #f0675d; --up-soft: rgba(63,185,132,.18); --down-soft: rgba(240,103,93,.18);
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 36px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 36px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+h1 { font-family: var(--display); font-stretch: 80%; font-weight: 780; font-size: clamp(34px, 6vw, 60px); line-height: 1.02; margin: 6px 0 12px; text-wrap: balance; }
+h2 { font-family: var(--display); font-stretch: 88%; font-weight: 700; font-size: 22px; margin: 0 0 12px; text-wrap: balance; }
+h3 { font-family: var(--display); font-stretch: 90%; font-weight: 700; font-size: 18px; margin: 24px 0 8px; }
+p, li { max-width: 70ch; }
+p { margin: 0 0 12px; }
+.lead { font-size: 18px; color: var(--muted); }
+a { color: var(--gold); }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+thead th { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+th.num { text-align: right; }
+.wrap > *, section { min-width: 0; }
+td.name a { font-weight: 650; text-decoration: none; color: var(--ink); }
+td.name a:hover { color: var(--gold); text-decoration: underline; }
+td.name small { display: block; color: var(--muted); font-size: 12.5px; white-space: normal; max-width: 34ch; }
+.pos { color: var(--up); } .neg { color: var(--down); }
+.chip { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.chip.ready { background: var(--up-soft); color: var(--up); } .chip.not-ready { background: var(--down-soft); color: var(--down); }
+.chip.caution { background: var(--gold-soft); color: var(--gold); } .chip.level { background: var(--line); color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; min-width: 0; }
+.card ol, .card ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+code { font-family: var(--mono); font-size: 13.5px; background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 18px; }
+.doc { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: clamp(18px, 4vw, 44px); min-width: 0; }
+.doc table { display: block; overflow-x: auto; font-size: 13.5px; }
+.doc th, .doc td { white-space: normal; min-width: 12ch; vertical-align: top; }
+.doc h1 { font-size: clamp(28px, 5vw, 44px); }
+.doc h2 { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); }
+.doc blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid var(--gold); color: var(--muted); }
+.back { font-weight: 600; text-decoration: none; font-size: 14px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  table.list thead { display: none; }
+  table.list, table.list tbody { display: block; }
+  table.list tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; padding: 14px 16px;
+    border-bottom: 1px solid var(--line); }
+  table.list tr:last-child { border-bottom: 0; }
+  table.list td { padding: 0; border: 0; white-space: normal; text-align: left; }
+  table.list td.name { grid-column: 1 / -1; }
+  table.list td[data-label]::before { content: attr(data-label); display: block; font-family: var(--body);
+    font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  table.list td.verdict { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style></head><body>
+<div class="wrap">
+<header>
+  <a class="back" href="./">← Open the backtester</a>
+  <div class="eyebrow">XAUUSD · spot gold · strategy library</div>
+  <h1>Gold Strategy Lab</h1>
+  <p class="lead">Gold trading strategies backtested with TradingView's Strategy Tester rules, real bid/ask spreads,
+  commission, slippage and overnight swap, then checked for whether the result can be trusted before automating.</p>
+  <div class="facts"><span>Data: Dukascopy Jan 2019 – Oct 2026</span><span>Account: $10,000</span>
+  <span>Costs: spread + $7/lot + $0.05 slippage + swap</span><span>Built 25 Oct 2026 13:47 UTC</span></div>
+</header>
+<section>
+  <h2>Strategies</h2>
+  <div class="scroll"><table class="list">
+    <thead><tr><th>Strategy</th><th>TF</th><th class="num">Net profit</th><th class="num">Profit factor</th>
+    <th class="num">Max DD</th><th class="num">Trades</th><th>Verdict</th></tr></thead>
+    <tbody><tr><td class="name"><a href="strategies/donchian-55-20-breakout-turtle-style.html">Donchian 55/20 breakout (Turtle-style)</a><small>Partly supported</small></td><td data-label="Timeframe">4h</td><td class="num pos" data-label="Net profit">$2,779</td><td class="num" data-label="Profit factor">1.52</td><td class="num" data-label="Max DD">9.4%</td><td class="num" data-label="Trades">203</td><td class="verdict"><span class="chip caution">Caution</span></td></tr><tr><td class="name"><a href="strategies/time-series-momentum-1-3-12-month-blend.html">Time-series momentum (1/3/12 month blend)</a><small>Peer-reviewed</small></td><td data-label="Timeframe">1d</td><td class="num pos" data-label="Net profit">$1,321</td><td class="num" data-label="Profit factor">1.71</td><td class="num" data-label="Max DD">4.7%</td><td class="num" data-label="Trades">118</td><td class="verdict"><span class="chip caution">Caution</span></td></tr><tr><td class="name"><a href="strategies/ema-50-200-trend-atr-trailing-stop.html">EMA 50/200 trend, ATR trailing stop</a><small>Partly supported</small></td><td data-label="Timeframe">4h</td><td class="num pos" data-label="Net profit">$538</td><td class="num" data-label="Profit factor">1.51</td><td class="num" data-label="Max DD">2.7%</td><td class="num" data-label="Trades">64</td><td class="verdict"><span class="chip not-ready">Not ready</span></td></tr><tr><td class="name"><a href="strategies/new-york-comex-opening-range-breakout.html">New York (COMEX) opening range breakout</a><small>Weak or indirect</small></td><td data-label="Timeframe">5m</td><td class="num neg" data-label="Net profit">-$335</td><td class="num" data-label="Profit factor">0.96</td><td class="num" data-label="Max DD">13.5%</td><td class="num" data-label="Trades">324</td><td class="verdict"><span class="chip not-ready">Not ready</span></td></tr><tr><td class="name"><a href="strategies/asian-range-london-breakout.html">Asian range, London breakout</a><small>Folklore</small></td><td data-label="Timeframe">15m</td><td class="num neg" data-label="Net profit">-$442</td><td class="num" data-label="Profit factor">0.80</td><td class="num" data-label="Max DD">5.9%</td><td class="num" data-label="Trades">128</td><td class="verdict"><span class="chip not-ready">Not ready</span></td></tr><tr><td class="name"><a href="strategies/asia-session-drift-long-overnight-flat-in-us-hours.html">Asia-session drift (long overnight, flat in US hours)</a><small>Peer-reviewed</small></td><td data-label="Timeframe">1h</td><td class="num neg" data-label="Net profit">-$1,250</td><td class="num" data-label="Profit factor">0.98</td><td class="num" data-label="Max DD">44.8%</td><td class="num" data-label="Trades">1,367</td><td class="verdict"><span class="chip not-ready">Not ready</span></td></tr><tr><td class="name"><a href="strategies/rsi-2-pullback-with-200-sma-trend-filter.html">RSI(2) pullback with 200 SMA trend filter</a><small>Folklore</small></td><td data-label="Timeframe">1h</td><td class="num neg" data-label="Net profit">-$3,228</td><td class="num" data-label="Profit factor">0.82</td><td class="num" data-label="Max DD">37.0%</td><td class="num" data-label="Trades">2,066</td><td class="verdict"><span class="chip not-ready">Not ready</span></td></tr></tbody></table></div>
+  <p class="lead" style="font-size:15px;margin-top:12px">Each strategy page has the chart with every trade, the equity curve,
+  monthly returns, the full trade list and the readiness checklist. "Ready" never means ready for real money:
+  it means ready for a paper account.</p>
+</section>
+<div class="grid2">
+  <section class="card">
+    <h2>What the research found</h2>
+    <ul>
+      <li>TradingView licenses its data for display only and bans accounts that scrape it, so this lab copies TradingView's
+      published fill rules and metric formulas and uses Dukascopy's free bid/ask history instead.</li>
+      <li>Trend-following has peer-reviewed support for gold as part of diversified portfolios. Session breakouts and RSI
+      mean reversion on gold are mostly folklore.</li>
+      <li>Costs decide most intraday results. Overnight swap decides many swing results.</li>
+      <li>Count every variant you try. The Deflated Sharpe check uses that count to separate an edge from luck.</li>
+    </ul>
+    <p><a href="research.html">Read the full research report →</a></p>
+  </section>
+  <section class="card">
+    <h2>Add your own strategy</h2>
+    <ol>
+      <li><code>python -m goldlab new "My idea" --tf 15m</code> creates a strategy card.</li>
+      <li>Write the rules in plain expressions: <code>crossover(ema(close, 20), ema(close, 50))</code>.</li>
+      <li><code>python -m goldlab validate my_idea</code> runs the checklist locally.</li>
+      <li>Or open the <a href="./">backtester</a>, edit the rules in Settings → Rules, and save them in your browser.</li>
+      <li>Commit the card to <code>strategies/</code> and the site lists it here permanently.</li>
+    </ol>
+  </section>
+</div>
+<footer>
+  <span>Backtests describe the past and are not financial advice. Leveraged gold CFDs can lose more than you expect.</span>
+  <span>Charts: <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a> (Apache-2.0).
+  Price data: Dukascopy.</span>
+</footer>
+</div></body></html>

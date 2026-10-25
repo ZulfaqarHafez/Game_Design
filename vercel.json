@@ -3,5 +3,12 @@
   "framework": null,
   "installCommand": "echo 'no install step'",
   "buildCommand": "sh gold-backtester/scripts/vercel_build.sh",
-  "outputDirectory": "gold-backtester/public"
+  "outputDirectory": "gold-backtester/public",
+  "functions": {
+    "api/lab.py": {
+      "maxDuration": 60,
+      "includeFiles": "gold-backtester/{goldlab,strategies,data/sample}/**",
+      "excludeFiles": "{gold-backtester/public,gold-backtester/journal,gold-backtester/data/cache,gold-backtester/tests,research_notes,reports}/**"
+    }
+  }
 }

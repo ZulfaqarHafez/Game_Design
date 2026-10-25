@@ -145,7 +145,8 @@ def build(out: Path, quick: bool = False, max_candles: int = 8000) -> list[dict]
         v = validate(s, data, make_settings(s, "realistic"), journal=None, quick=quick)
         slug = slugify(s.name)
         (tmp / "strategies" / f"{slug}.html").write_text(
-            render(v["result"], v, title=f"{s.name} · Gold Strategy Lab", max_candles=max_candles, back_href="../"))
+            render(v["result"], v, title=f"{s.name} · Gold Strategy Lab", max_candles=max_candles,
+                   back_href="../library.html"))
         m = v["metrics"]
         rows.append({"slug": slug, "name": s.name, "tf": tf, "mine": path.parent.name == "strategies",
                      "evidence": _evidence_level(s.card.get("evidence")), "desc": s.description,
@@ -153,7 +154,11 @@ def build(out: Path, quick: bool = False, max_candles: int = 8000) -> list[dict]
                      "trades": m["total_trades"], "verdict": v["verdict"],
                      "start": data.index[0], "end": data.index[-1]})
         print(f"  {s.name}: {v['verdict']} ({time.time() - t0:.0f}s)", flush=True)
-    (tmp / "index.html").write_text(_index(rows))
+    (tmp / "library.html").write_text(_index(rows))
+    web = ROOT / "web"
+    for f in web.glob("*"):          # the interactive backtester is the home page
+        if f.is_file():
+            shutil.copy(f, tmp / f.name)
     if RESEARCH.exists():
         (tmp / "research.html").write_text(_research(RESEARCH.read_text()))
     shutil.rmtree(out, ignore_errors=True)
@@ -182,7 +187,8 @@ def _index(rows: list[dict]) -> str:
     research_link = '<p><a href="research.html">Read the full research report →</a></p>' if RESEARCH.exists() else ""
     body = f"""<div class="wrap">
 <header>
-  <div class="eyebrow">XAUUSD · spot gold</div>
+  <a class="back" href="./">← Open the backtester</a>
+  <div class="eyebrow">XAUUSD · spot gold · strategy library</div>
   <h1>Gold Strategy Lab</h1>
   <p class="lead">Gold trading strategies backtested with TradingView's Strategy Tester rules, real bid/ask spreads,
   commission, slippage and overnight swap, then checked for whether the result can be trusted before automating.</p>
@@ -218,7 +224,8 @@ def _index(rows: list[dict]) -> str:
       <li><code>python -m goldlab new "My idea" --tf 15m</code> creates a strategy card.</li>
       <li>Write the rules in plain expressions: <code>crossover(ema(close, 20), ema(close, 50))</code>.</li>
       <li><code>python -m goldlab validate my_idea</code> runs the checklist locally.</li>
-      <li>Commit and push. The site rebuilds and lists it at the top.</li>
+      <li>Or open the <a href="./">backtester</a>, edit the rules in Settings → Rules, and save them in your browser.</li>
+      <li>Commit the card to <code>strategies/</code> and the site lists it here permanently.</li>
     </ol>
   </section>
 </div>
@@ -240,5 +247,5 @@ def _research(md_text: str) -> str:
         body = f"<pre>{html.escape(md_text)}</pre>"
     return (HEAD.format(title="Gold research report · Gold Strategy Lab",
                         desc="How TradingView works, what can be reused, gold data, costs, validation and automation.", css=CSS)
-            + f'<div class="wrap"><a class="back" href="./">← Gold Strategy Lab</a><article class="doc">{body}</article>'
+            + f'<div class="wrap"><a class="back" href="./">← Backtester</a> · <a class="back" href="library.html">Library</a><article class="doc">{body}</article>'
             + '<footer><span>Not financial or legal advice.</span></footer></div></body></html>')

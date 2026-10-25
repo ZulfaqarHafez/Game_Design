@@ -11,6 +11,7 @@
   paper     <strategy> [--tf 15m] [--once]          run the live loop against the paper broker
   webhook   [--port 8080]                           receive TradingView alerts
   site      [--out public] [--quick]                build the static website (deployed to Vercel)
+  serve     [--port 8000]                           preview the website and its backtester API locally
   list                                              list strategy files
 
 <strategy> is a .yaml card or a .py file (path, or a name inside strategies/ or strategies/examples/).
@@ -177,6 +178,44 @@ def cmd_site(a):
     print(f"Built {len(rows)} strategy pages into {a.out}")
 
 
+def cmd_serve(a):
+    """Local preview of the website with a working /api/lab, like Vercel."""
+    import json as _json
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+    from .webapi import handle
+
+    class H(SimpleHTTPRequestHandler):
+        def _api(self, body):
+            u = urlparse(self.path)
+            op = (parse_qs(u.query).get("op") or [""])[0]
+            code, out = handle(op, body)
+            data = _json.dumps(out).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if self.path.startswith("/api/lab"):
+                return self._api(None)
+            return super().do_GET()
+
+        def do_POST(self):
+            if not self.path.startswith("/api/lab"):
+                self.send_error(404)
+                return
+            n = int(self.headers.get("Content-Length") or 0)
+            self._api(_json.loads(self.rfile.read(n) or b"{}"))
+
+        def log_message(self, *args):
+            pass
+
+    print(f"Serving {a.dir} with the backtester API on http://localhost:{a.port}")
+    ThreadingHTTPServer(("127.0.0.1", a.port), partial(H, directory=a.dir)).serve_forever()
+
+
 def cmd_webhook(a):
     from .live.webhook import serve
     serve(port=a.port, config=a.config)
@@ -220,6 +259,9 @@ def main(argv=None):
     sp = sub.add_parser("site", help="build the static website")
     sp.add_argument("--out", default=str(ROOT / "public")); sp.add_argument("--quick", action="store_true")
     sp.set_defaults(fn=cmd_site)
+    sp = sub.add_parser("serve", help="preview the website locally with the backtester API")
+    sp.add_argument("--port", type=int, default=8000); sp.add_argument("--dir", default=str(ROOT / "public"))
+    sp.set_defaults(fn=cmd_serve)
     sp = sub.add_parser("webhook"); sp.add_argument("--port", type=int, default=8080)
     sp.add_argument("--config", default=str(ROOT / "live.yaml")); sp.set_defaults(fn=cmd_webhook)
     a = p.parse_args(argv)

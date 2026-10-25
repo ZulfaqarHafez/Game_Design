@@ -153,11 +153,19 @@ class Context:
                ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.USub, ast.UAdd, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
                ast.Eq, ast.NotEq, ast.keyword)
 
+    MAX_EXPR = 600          # characters per expression
+    MAX_CONST = 1e9         # largest numeric literal
+    MAX_LOOKBACK = 5000     # largest length / offset an indicator may use
+    MATHS = {"abs", "min", "max", "nz", "na", "round", "sqrt", "log"}
+
     def parse(self, expr) -> ast.AST:
         if isinstance(expr, (int, float, bool)):
             expr = repr(expr)
+        text = str(expr)
+        if len(text) > self.MAX_EXPR:
+            raise RuleError(f"Expression is too long (max {self.MAX_EXPR} characters)")
         try:
-            tree = ast.parse(str(expr), mode="eval")
+            tree = ast.parse(text, mode="eval")
         except SyntaxError as e:
             raise RuleError(f"Cannot parse expression {expr!r}: {e.msg}") from None
         for node in ast.walk(tree):
@@ -165,6 +173,13 @@ class Context:
                 raise RuleError(f"Not allowed in expressions: {type(node).__name__} in {expr!r}")
             if isinstance(node, ast.Call) and not isinstance(node.func, ast.Name):
                 raise RuleError(f"Only plain function calls are allowed: {expr!r}")
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+                if abs(node.value) > self.MAX_CONST:
+                    raise RuleError(f"Number too large in {expr!r}")
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+                if not (isinstance(node.right, ast.Constant) and isinstance(node.right.value, (int, float))
+                        and abs(node.right.value) <= 10):
+                    raise RuleError("Powers need a fixed exponent between -10 and 10")
         return tree.body
 
     def is_dynamic(self, node) -> bool:
@@ -248,6 +263,8 @@ class Context:
             k = self._ev(node.slice)
             if not np.isscalar(k) or int(k) < 0:
                 raise RuleError("x[n] needs a fixed n >= 0 (negative n would look into the future)")
+            if int(k) > self.MAX_LOOKBACK:
+                raise RuleError(f"x[n]: n must be at most {self.MAX_LOOKBACK}")
             return base.shift(int(k))
         if isinstance(node, ast.Call):
             fname = node.func.id
@@ -256,6 +273,11 @@ class Context:
             args = [self._ev(a) if not (fname in ("security",) and i == 1) else
                     (a.value if isinstance(a, ast.Constant) else self._ev(a)) for i, a in enumerate(node.args)]
             kwargs = {k.arg: self._ev(k.value) for k in node.keywords}
+            if fname not in self.MATHS:
+                for v in list(args) + list(kwargs.values()):
+                    if isinstance(v, (int, float)) and not isinstance(v, bool) and (
+                            not np.isfinite(v) or abs(v) > self.MAX_LOOKBACK):
+                        raise RuleError(f"{fname}(): numbers must be at most {self.MAX_LOOKBACK}")
             try:
                 return self.funcs[fname](*args, **kwargs)
             except TypeError as e:
@@ -350,6 +372,10 @@ class RuleStrategy(Strategy):
                  "source", "version", "warmup", "pine", "oca_entries"}
 
     def __init__(self, card: dict, **overrides):
+        if not isinstance(card, dict):
+            raise RuleError("A strategy card must be a mapping")
+        if len(card.get("vars") or {}) > 60 or len(card.get("plots") or {}) > 10 or len(card.get("params") or {}) > 30:
+            raise RuleError("Too many vars (max 60), plots (max 10) or params (max 30)")
         unknown = set(card) - self.CARD_KEYS
         if unknown:
             raise RuleError(f"Unknown card keys: {sorted(unknown)}")
