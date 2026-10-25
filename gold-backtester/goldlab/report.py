@@ -26,7 +26,7 @@ def _num(v, kind="money"):
     if kind == "pct":
         return f"{v:,.2f}%"
     if kind == "ratio":
-        return f"{v:,.3f}"
+        return f"{0.0 if abs(v) < 5e-4 else v:,.3f}"  # avoid "-0.000"
     if kind == "int":
         return f"{int(v):,}"
     return f"{v:,.2f}"
