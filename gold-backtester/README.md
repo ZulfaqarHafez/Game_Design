@@ -187,6 +187,20 @@ checklist, and the research report. It's deployed on Vercel from this repo (`../
 deploy runs `scripts/vercel_build.sh`, which rebuilds the site with Python. If that fails, Vercel serves
 the copy committed in `public/`, so run `python -m goldlab site` before you commit to keep it current.
 
+`python -m goldlab serve` previews the site with a working backtest API on http://localhost:8000.
+
+### Testing the website
+
+```
+python -m pytest                                   # engine, rules, live trading and API (every strategy × timeframe × cost model)
+node tests/e2e/run.cjs                             # every feature of the page in a real browser, phone and desktop, light and dark
+ONLY=mobile,a11y node tests/e2e/run.cjs            # just the tests whose name contains these words
+BASE=https://gold-strategy-lab-eight.vercel.app/ node tests/e2e/run.cjs   # the live site
+```
+
+The browser tests need Node and Playwright with Chromium. They check results against the API, keyboard
+use, screen-reader landmarks (axe-core), 44px tap targets, error and empty states, and page speed.
+
 ## The example strategies
 
 | Card | TF | Evidence |
@@ -212,7 +226,7 @@ goldlab/
   live/        runner.py, risk.py, webhook.py, brokers/ (paper, oanda, mt5)
 strategies/    your cards (examples/ holds the templates)
 journal/       everything you've tried (commit it)
-tests/         python -m pytest
+tests/         python -m pytest; e2e/run.cjs drives the website in a browser
 ```
 
 Not financial advice. Leveraged gold CFDs can lose more than you expect; in Singapore, brokers must put

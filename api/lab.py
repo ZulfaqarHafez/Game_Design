@@ -11,9 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gold-backtester"))
 
-from goldlab.webapi import handle  # noqa: E402
-
-MAX_BODY = 64_000
+from goldlab.webapi import MAX_BODY, route  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -29,19 +27,9 @@ class handler(BaseHTTPRequestHandler):
         return (parse_qs(urlparse(self.path).query).get("op") or [""])[0]
 
     def do_GET(self):
-        op = self._op()
-        if op != "strategies":
-            return self._send(405, {"error": "Use POST for this operation"})
-        self._send(*handle(op, None))
+        self._send(*route("GET", self._op()))
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_BODY:
-            return self._send(413, {"error": "Request too large"})
-        try:
-            req = json.loads(self.rfile.read(n) or b"{}")
-        except ValueError:
-            return self._send(400, {"error": "Body must be JSON"})
-        if not isinstance(req, dict):
-            return self._send(400, {"error": "Body must be a JSON object"})
-        self._send(*handle(self._op(), req))
+        # Read at most one byte past the limit so oversized bodies get a 413 without being buffered.
+        self._send(*route("POST", self._op(), self.rfile.read(min(n, MAX_BODY + 1)) if n > 0 else b""))

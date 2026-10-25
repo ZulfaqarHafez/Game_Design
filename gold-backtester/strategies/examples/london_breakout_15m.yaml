@@ -14,6 +14,11 @@ params:
   min_range_atr: 0.3
   max_range_atr: 1.2
   target_r: 1.5
+labels:
+  buffer_atr: "Entry buffer (× ATR)"
+  min_range_atr: "Skip if Asian range below (× daily ATR)"
+  max_range_atr: "Skip if Asian range above (× daily ATR)"
+  target_r: "Target (R multiple)"
 vars:
   asia_hi: session_high("00:00-07:00", "Europe/London")
   asia_lo: session_low("00:00-07:00", "Europe/London")

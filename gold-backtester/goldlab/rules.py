@@ -369,7 +369,7 @@ class RuleStrategy(Strategy):
                  "trail_dist", "trail_trigger", "lots", "qty", "comment", "keep_pending"}
     CARD_KEYS = {"name", "description", "timeframe", "symbol", "author", "tags", "evidence", "notes",
                  "params", "vars", "long", "short", "exit", "cancel_when", "settings", "plots", "created",
-                 "source", "version", "warmup", "pine", "oca_entries"}
+                 "source", "version", "warmup", "pine", "oca_entries", "labels"}
 
     def __init__(self, card: dict, **overrides):
         if not isinstance(card, dict):

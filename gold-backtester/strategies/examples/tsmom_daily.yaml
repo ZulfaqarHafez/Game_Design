@@ -12,6 +12,11 @@ params:
   mid_lb: 63
   long_lb: 252
   atr_mult: 3.0
+labels:
+  short_lb: "Short lookback (days)"
+  mid_lb: "Medium lookback (days)"
+  long_lb: "Long lookback (days)"
+  atr_mult: "Stop distance (× ATR)"
 vars:
   s1: (close > close[short_lb]) * 1 - (close < close[short_lb]) * 1
   s2: (close > close[mid_lb]) * 1 - (close < close[mid_lb]) * 1

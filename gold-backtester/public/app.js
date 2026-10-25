@@ -7,59 +7,71 @@
   var $ = function (id) { return document.getElementById(id); };
   var state = {
     meta: null, strategies: {}, current: null, tf: null, days: null, preset: "realistic",
-    params: {}, custom: null, result: null, filter: "all", extra: null, selected: null, priceLines: [], plotSeries: [],
-    running: false, seq: 0,
+    custom: null, result: null, filter: "all", extra: null, selected: null, priceLines: [], plotSeries: [],
+    seq: 0, showBH: false,
   };
   var store = {
     get: function (k, d) { try { var v = localStorage.getItem("gsl:" + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-    set: function (k, v) { try { localStorage.setItem("gsl:" + k, JSON.stringify(v)); } catch (e) { /* storage off */ } },
+    set: function (k, v) { try { localStorage.setItem("gsl:" + k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } },
   };
+  window.__gsl = state;   // read-only hook for the end-to-end tests
 
   // ---------------------------------------------------------------- formatting
   function money(v, dp) {
     if (v === null || v === undefined || isNaN(v)) return "n/a";
-    var s = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dp === undefined ? 2 : dp, maximumFractionDigits: dp === undefined ? 2 : dp });
+    dp = dp === undefined ? 2 : dp;
+    if (Math.abs(v) < Math.pow(10, -dp) / 2) v = 0;
+    var s = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
     return (v < 0 ? "-$" : "$") + s;
   }
   function num(v, dp) {
     if (v === null || v === undefined || isNaN(v)) return "n/a";
     if (!isFinite(v)) return "∞";
-    if (Math.abs(v) < Math.pow(10, -(dp || 2)) / 2) v = 0;
-    return v.toLocaleString("en-US", { minimumFractionDigits: dp === undefined ? 2 : dp, maximumFractionDigits: dp === undefined ? 2 : dp });
+    dp = dp === undefined ? 2 : dp;
+    if (Math.abs(v) < Math.pow(10, -dp) / 2) v = 0;
+    return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
   }
   function pct(v, dp) { return v === null || v === undefined ? "n/a" : num(v, dp === undefined ? 2 : dp) + "%"; }
   function cls(v) { return v > 0 ? "pos" : v < 0 ? "neg" : ""; }
-  function esc(s) { return String(s === undefined || s === null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-  function dt(ts) { var d = new Date(ts * 1000); return d.toISOString().slice(0, 16).replace("T", " "); }
+  function esc(s) { return String(s === undefined || s === null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function dt(ts) { return new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " "); }
   function tok(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-  function toast(msg) { var t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 2600); }
+  function toast(msg) { var t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 3200); }
+  function announce(msg) { var a = $("announce"); a.textContent = ""; setTimeout(function () { a.textContent = msg; }, 50); }
+  function humanize(key) {
+    var words = String(key).split("_").map(function (w) { return /^(atr|rsi|ema|sma|tp|sl|r)$/i.test(w) ? w.toUpperCase() : w; });
+    var s = words.join(" ");
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
 
   // ---------------------------------------------------------------- api
   function api(op, body) {
     var opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
     return fetch(API + "?op=" + op, opts).then(function (r) {
-      return r.json().catch(function () { return { error: "The server returned an unexpected response (" + r.status + ")." }; })
+      return r.json().catch(function () { return { error: "The server returned an unexpected response (" + r.status + "). Try again in a moment." }; })
         .then(function (j) { if (!r.ok || j.error) throw new Error(j.error || ("Request failed (" + r.status + ")")); return j; });
-    });
+    }, function () { throw new Error("Can't reach the backtest server. Check your connection and try again."); });
   }
 
   // ---------------------------------------------------------------- charts
-  var chartOpts = function () {
+  function chartOpts() {
     return {
       autoSize: true,
-      layout: { background: { color: tok("--panel") }, textColor: tok("--muted"), fontFamily: "JetBrains Mono, monospace", fontSize: 11 },
+      layout: { background: { color: tok("--panel") }, textColor: tok("--muted"), fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+        panes: { separatorColor: tok("--line"), enableResize: false } },
       grid: { vertLines: { color: tok("--line") }, horzLines: { color: tok("--line") } },
       rightPriceScale: { borderColor: tok("--line") },
       timeScale: { borderColor: tok("--line"), timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
     };
-  };
+  }
+  var dollars = { type: "custom", minMove: 1, formatter: function (v) { return "$" + Math.round(v).toLocaleString("en-US"); } };
   var price, candles, markers, eqChart, eqSeries, bhSeries, ddSeries;
   function initCharts() {
     if (!L) { $("chart").textContent = "The chart library could not load. Check your connection and reload."; return; }
     price = L.createChart($("chart"), chartOpts());
-    candles = price.addSeries(L.CandlestickSeries, { upColor: tok("--up"), downColor: tok("--down"), borderVisible: false,
-      wickUpColor: tok("--up"), wickDownColor: tok("--down") });
+    candles = price.addSeries(L.CandlestickSeries, { upColor: tok("--chart-up"), downColor: tok("--chart-down"), borderVisible: false,
+      wickUpColor: tok("--chart-up"), wickDownColor: tok("--chart-down") });
     markers = L.createSeriesMarkers(candles, []);
     price.subscribeCrosshairMove(legendUpdate);
     price.subscribeClick(function (p) {
@@ -70,21 +82,24 @@
     });
     eqChart = L.createChart($("equity"), chartOpts());
     eqChart.applyOptions({ timeScale: { minBarSpacing: 0.001 } });
-    eqSeries = eqChart.addSeries(L.AreaSeries, { lineColor: tok("--gold"), topColor: tok("--gold-soft"), bottomColor: "rgba(0,0,0,0)", lineWidth: 2, priceLineVisible: false });
-    bhSeries = eqChart.addSeries(L.LineSeries, { color: tok("--muted"), lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
-    ddSeries = eqChart.addSeries(L.HistogramSeries, { color: tok("--down-soft"), priceScaleId: "dd", priceLineVisible: false, lastValueVisible: false });
-    eqChart.priceScale("dd").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    eqSeries = eqChart.addSeries(L.AreaSeries, { lineColor: tok("--gold"), topColor: tok("--gold-soft"), bottomColor: "rgba(0,0,0,0)",
+      lineWidth: 2, priceLineVisible: false, priceFormat: dollars });
+    bhSeries = eqChart.addSeries(L.LineSeries, { color: tok("--muted"), lineWidth: 1, lineStyle: 2, priceLineVisible: false,
+      lastValueVisible: false, priceFormat: dollars, visible: false });
+    ddSeries = eqChart.addSeries(L.HistogramSeries, { color: tok("--chart-down"), priceLineVisible: false, lastValueVisible: false,
+      priceFormat: { type: "custom", minMove: 0.01, formatter: function (v) { return v.toFixed(1) + "%"; } } }, 1);
+    try { eqChart.panes()[1].setHeight(70); } catch (e) { /* older library */ }
     var rethemer = function () {
       [price, eqChart].forEach(function (c) { c.applyOptions(chartOpts()); });
-      candles.applyOptions({ upColor: tok("--up"), downColor: tok("--down"), wickUpColor: tok("--up"), wickDownColor: tok("--down") });
+      candles.applyOptions({ upColor: tok("--chart-up"), downColor: tok("--chart-down"), wickUpColor: tok("--chart-up"), wickDownColor: tok("--chart-down") });
       eqSeries.applyOptions({ lineColor: tok("--gold"), topColor: tok("--gold-soft") });
       bhSeries.applyOptions({ color: tok("--muted") });
-      if (state.result) drawMarkers();
+      if (state.result) { drawMarkers(); drawEquity(); }
     };
     try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rethemer); } catch (e) { /* old browser */ }
     new MutationObserver(rethemer).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   }
-  var plotColors = ["#3d7bd9", "#b56bd1", "#d98c3d", "#3fa7a7", "#8a8f3d"];
+  var plotColors = ["#3d7bd9", "#a65fc4", "#d0801f", "#2f9e9e", "#7d8a2a"];
   function legendUpdate(p) {
     var r = state.result; if (!r) return;
     var c = null;
@@ -100,7 +115,7 @@
   function drawMarkers() {
     var r = state.result; if (!r || !markers) return;
     var first = r.candles.length ? r.candles[0][0] : 0;
-    var up = tok("--up"), down = tok("--down"), mk = [];
+    var up = tok("--chart-up"), down = tok("--chart-down"), mk = [];
     var labels = r.trades.length <= 150;   // dense charts read better with bare markers
     r.trades.forEach(function (t) {
       var long = t.side === "long";
@@ -112,6 +127,16 @@
     });
     mk.sort(function (a, b) { return a.time - b.time; });
     markers.setMarkers(mk);
+  }
+  function drawEquity() {
+    var r = state.result; if (!r || !eqSeries) return;
+    eqSeries.setData(r.equity.map(function (p) { return { time: p[0], value: p[1] }; }));
+    bhSeries.setData((r.buyhold || []).map(function (p) { return { time: p[0], value: p[1] }; }));
+    bhSeries.applyOptions({ visible: state.showBH });
+    $("bh-key").hidden = !state.showBH;
+    var down = tok("--chart-down");
+    ddSeries.setData(r.drawdown.map(function (p) { return { time: p[0], value: p[1], color: down }; }));
+    eqChart.timeScale().fitContent();
   }
   function drawChart() {
     var r = state.result;
@@ -128,13 +153,10 @@
     var n = r.candles.length;
     if (n > 300) price.timeScale().setVisibleLogicalRange({ from: n - 300, to: n + 5 }); else price.timeScale().fitContent();
     legendUpdate(null);
-    var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · source: " + r.data.source;
+    var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · data: " + r.data.source;
     if (r.data.candles_shown < r.data.bars) note += " · chart shows the last " + r.data.candles_shown.toLocaleString() + " bars";
     $("chart-note").textContent = note;
-    eqSeries.setData(r.equity.map(function (p) { return { time: p[0], value: p[1] }; }));
-    bhSeries.setData((r.buyhold || []).map(function (p) { return { time: p[0], value: p[1] }; }));
-    ddSeries.setData(r.drawdown.map(function (p) { return { time: p[0], value: p[1], color: tok("--down-soft") }; }));
-    eqChart.timeScale().fitContent();
+    drawEquity();
   }
   function clearSelection() {
     state.priceLines.forEach(function (l) { candles.removePriceLine(l); });
@@ -150,14 +172,14 @@
   }
   function focusTrade(t, stay) {
     var r = state.result;
-    if (!r.candles.length || t.entry_time < r.candles[0][0]) { toast("That trade is older than the bars on the chart. Narrow the date range to see it."); return; }
+    if (!r.candles.length || t.entry_time < r.candles[0][0]) { toast("That trade is older than the bars on the chart. Pick a shorter date range to see it."); return; }
     clearSelection();
     state.selected = t.n;
     var bar = r.candles.length > 1 ? r.candles[1][0] - r.candles[0][0] : 3600;
     var pad = Math.max(20, Math.round((t.exit_time - t.entry_time) / bar * 0.6)) * bar;
     price.timeScale().setVisibleRange({ from: t.entry_time - pad, to: t.exit_time + pad });
     state.priceLines.push(candles.createPriceLine({ price: t.entry_price, color: tok("--gold"), lineWidth: 1, lineStyle: 2, title: "Entry #" + t.n }));
-    state.priceLines.push(candles.createPriceLine({ price: t.exit_price, color: t.pnl >= 0 ? tok("--up") : tok("--down"), lineWidth: 1, lineStyle: 2, title: "Exit " + money(t.pnl, 0) }));
+    state.priceLines.push(candles.createPriceLine({ price: t.exit_price, color: t.pnl >= 0 ? tok("--chart-up") : tok("--chart-down"), lineWidth: 1, lineStyle: 2, title: "Exit " + money(t.pnl, 0) }));
     document.querySelectorAll("#trades tbody tr").forEach(function (tr) { tr.classList.toggle("sel", Number(tr.dataset.n) === t.n); });
     $("trade-nav").hidden = false;
     $("trade-nav-label").textContent = "#" + t.n + " " + t.side + " " + money(t.pnl, 0) + (t.r !== null && t.r !== undefined ? " (" + num(t.r, 1) + "R)" : "");
@@ -170,19 +192,43 @@
   }
   function renderOverview() {
     var m = state.result.metrics, s = state.result.settings;
+    $("kpis").classList.remove("loading");
     $("kpis").innerHTML = [
-      kpi("Net profit", money(m.net_profit, 0), pct(m.net_profit_pct) + " of " + money(s.initial_capital, 0), cls(m.net_profit)),
-      kpi("Max drawdown", money(m.max_drawdown, 0), pct(m.max_drawdown_pct) + " (TradingView method)"),
-      kpi("Profit factor", num(m.profit_factor, 2), "gross profit ÷ gross loss"),
-      kpi("Win rate", pct(m.percent_profitable, 1), num(m.total_trades, 0) + " closed trades"),
-      kpi("Avg trade", money(m.avg_trade), (m.avg_r === null || m.avg_r === undefined ? "" : num(m.avg_r, 2) + "R · ") + "win/loss " + num(m.win_loss_ratio, 2), cls(m.avg_trade)),
-      kpi("Sharpe (annual)", num(m.annual_sharpe, 2), "monthly TradingView: " + num(m.sharpe, 3)),
-      kpi("Buy &amp; hold", pct(m.buy_hold_return_pct, 1), "holding gold over the same period"),
+      kpi("Net profit", money(m.net_profit, 0), pct(m.net_profit_pct, 1) + " of " + money(s.initial_capital, 0), cls(m.net_profit)),
+      kpi("Max drawdown", money(m.max_drawdown, 0), pct(m.max_drawdown_pct, 1) + " of peak"),
+      kpi("Profit factor", num(m.profit_factor, 2), "won ÷ lost"),
+      kpi("Win rate", pct(m.percent_profitable, 1), num(m.total_trades, 0) + " trades"),
+      kpi("Avg trade", money(m.avg_trade), (m.avg_r === null || m.avg_r === undefined ? "no stop, no R" : num(m.avg_r, 2) + "R per trade"), cls(m.avg_trade)),
+      kpi("Sharpe", num(m.annual_sharpe, 2), "annualised"),
+      kpi("Trades / month", num(m.trades_per_month, 1), pct(m.exposure_pct, 0) + " time in market"),
+      kpi("Buy &amp; hold", pct(m.buy_hold_return_pct, 1), "gold, same period"),
     ].join("");
+    $("summary").innerHTML = '<div><span class="l">Net</span><span class="v ' + cls(m.net_profit) + '">' + money(m.net_profit, 0) + "</span></div>" +
+      '<div><span class="l">Win rate</span><span class="v">' + pct(m.percent_profitable, 0) + "</span></div>" +
+      '<div><span class="l">Profit f.</span><span class="v">' + num(m.profit_factor, 2) + "</span></div>" +
+      '<div><span class="l">Max DD</span><span class="v">' + pct(m.max_drawdown_pct, 1) + "</span></div>";
+    var empty = $("empty"), skipped = m.rejected_orders || 0;
+    if (!m.total_trades) {
+      empty.hidden = false;
+      empty.innerHTML = "<b>No closed trades in this range.</b>" + (skipped ?
+        "Every signal was too small to trade at this account size (see below)."
+        : "Try a longer date range, a different timeframe, or loosen the inputs in Settings.");
+    } else { empty.hidden = true; }
+    var byRisk = $("p-qtytype").value !== "lots";
+    $("skip-note").hidden = !skipped;
+    if (skipped) {
+      var last = state.result.trades.length ? state.result.trades[state.result.trades.length - 1] : null;
+      $("skip-text").innerHTML = "<b>" + num(skipped, 0) + (skipped === 1 ? " signal was" : " signals were") + " skipped.</b> " +
+        (byRisk ? "With this stop distance, the position size works out below the broker minimum of 0.01 lot."
+                : "The account didn't have enough margin for the position.") +
+        (last ? " Last trade closed <span class=nowrap>" + new Date(last.exit_time * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) + "</span>." : "") +
+        (byRisk ? " Raise the account size or risk %, or trade the minimum size." : " Raise the account size or lower the lots.");
+      $("use-min-lot").hidden = !byRisk;
+    }
     var notes = [];
-    if (m.rejected_orders) notes.push(m.rejected_orders + " signals were skipped because the position would be under 0.01 lot. Raise the account size or risk %, or use fixed lots.");
     if (state.result.trades_truncated) notes.push("Showing the latest " + state.result.trades.length.toLocaleString() + " of " + state.result.trades_total.toLocaleString() + " trades.");
     if (m.open_pnl) notes.push("Open trade at the end: " + money(m.open_pnl) + " unrealised (not in net profit).");
+    notes.push("Max drawdown uses TradingView's method. Sharpe on monthly returns (TradingView style): " + num(m.sharpe, 3) + ".");
     notes.push("Computed in " + (state.result.elapsed_ms / 1000).toFixed(1) + " s.");
     $("run-note").textContent = notes.join(" ");
   }
@@ -194,9 +240,9 @@
       ["Avg winning trade", "avg_win", money], ["Avg losing trade", "avg_loss", money], ["Largest winning trade", "largest_win", money],
       ["Largest losing trade", "largest_loss", money], ["Avg # bars in trades", "avg_bars", function (v) { return num(v, 1); }],
       ["Commission paid", "commission", money]];
-    var t1 = "<thead><tr><th></th><th class=num>All</th><th class=num>Long</th><th class=num>Short</th></tr></thead><tbody>";
+    var t1 = "<caption class=sr>Performance by side</caption><thead><tr><th scope=col>Measure</th><th class=num scope=col>All</th><th class=num scope=col>Long</th><th class=num scope=col>Short</th></tr></thead><tbody>";
     rows.forEach(function (row) {
-      t1 += "<tr><th>" + row[0] + "</th>" + ["all", "long", "short"].map(function (k) {
+      t1 += "<tr><th scope=row>" + row[0] + "</th>" + ["all", "long", "short"].map(function (k) {
         var v = sd[k] ? sd[k][row[1]] : null; return '<td class="num">' + row[2](v) + "</td>";
       }).join("") + "</tr>";
     });
@@ -211,10 +257,11 @@
       ["Overnight swap paid", money(m.swap_paid)], ["Time in market", pct(m.exposure_pct, 1)],
       ["Trades per month", num(m.trades_per_month, 1)], ["Average R per trade", num(m.avg_r, 2)],
       ["Signals skipped (too small)", num(m.rejected_orders || 0, 0)]];
-    var t2 = "<thead><tr><th>Measure</th><th class=num>Value</th></tr></thead><tbody>" + risk.map(function (x) {
-      return "<tr><th style='white-space:normal'>" + esc(x[0]) + '</th><td class="num">' + x[1] + "</td></tr>";
+    var t2 = "<caption class=sr>Risk and return measures</caption><thead><tr><th scope=col>Measure</th><th class=num scope=col>Value</th></tr></thead><tbody>" + risk.map(function (x) {
+      return "<tr><th scope=row style='white-space:normal'>" + esc(x[0]) + '</th><td class="num">' + x[1] + "</td></tr>";
     }).join("") + "</tbody>";
-    $("tab-performance").innerHTML = '<div class="perf-grid"><div class="scroll"><table>' + t1 + '</table></div><div class="scroll"><table>' + t2 + "</table></div></div>";
+    $("tab-performance").innerHTML = '<div class="perf-grid"><div class="scroll" tabindex="0" aria-label="Performance by side"><table>' + t1 +
+      '</table></div><div class="scroll" tabindex="0" aria-label="Risk and return"><table>' + t2 + "</table></div></div>";
   }
   var fmtCache = {};
   function localParts(ts, tz) {
@@ -236,9 +283,9 @@
     var chip = $("extra-filter");
     chip.hidden = !state.extra;
     if (state.extra) chip.querySelector("span").textContent = "Showing " + state.extra.label + " (" + list.length + " trades).";
-    var head = "<thead><tr><th class=num>#</th><th>Side</th><th>Entry (UTC)</th><th class=num>Entry</th><th>Exit (UTC)</th><th class=num>Exit</th><th>Exit by</th><th class=num>Lots</th><th class=num>P&amp;L $</th><th class=num>R</th><th class=num>P&amp;L %</th><th class=num>Run-up</th><th class=num>Drawdown</th><th class=num>Bars</th><th class=num>Cum. P&amp;L</th></tr></thead>";
+    var head = "<caption class=sr>List of trades, newest first. Select a row to show the trade on the chart.</caption><thead><tr><th class=num scope=col>#</th><th scope=col>Side</th><th scope=col>Entry (UTC)</th><th class=num scope=col>Entry</th><th scope=col>Exit (UTC)</th><th class=num scope=col>Exit</th><th scope=col>Exit by</th><th class=num scope=col>Lots</th><th class=num scope=col>P&amp;L $</th><th class=num scope=col>R</th><th class=num scope=col>P&amp;L %</th><th class=num scope=col>Run-up</th><th class=num scope=col>Drawdown</th><th class=num scope=col>Bars</th><th class=num scope=col>Cum. P&amp;L</th></tr></thead>";
     var body = list.slice(0, 1500).map(function (t) {
-      return '<tr data-n="' + t.n + '"' + (state.selected === t.n ? ' class="sel"' : "") + '><td class="num" data-label="#">' + t.n +
+      return '<tr tabindex="0" data-n="' + t.n + '"' + (state.selected === t.n ? ' class="sel"' : "") + '><td class="num" data-label="#">' + t.n +
         '</td><td data-label="Side"><span class="side ' + t.side + '">' + t.side + '</span></td><td data-label="Entry time">' + dt(t.entry_time) +
         '</td><td class="num" data-label="Entry">' + num(t.entry_price) + '</td><td data-label="Exit time">' + dt(t.exit_time) +
         '</td><td class="num" data-label="Exit">' + num(t.exit_price) + '</td><td class="opt" data-label="Exit by">' + esc(t.exit_id) +
@@ -248,7 +295,7 @@
         '</td><td class="num opt" data-label="Drawdown">' + num(t.drawdown) + '</td><td class="num" data-label="Bars">' + t.bars +
         '</td><td class="num opt ' + cls(t.cum_pnl) + '" data-label="Cum. P&L">' + num(t.cum_pnl) + "</td></tr>";
     }).join("");
-    $("trades").innerHTML = head + "<tbody>" + (body || '<tr><td colspan="15">No trades match.</td></tr>') + "</tbody>";
+    $("trades").innerHTML = head + "<tbody>" + (body || '<tr><td colspan="15">No trades match this filter.</td></tr>') + "</tbody>";
   }
   function showTradesWith(extra) {
     state.extra = extra; state.filter = "all";
@@ -257,50 +304,72 @@
   }
   function renderAnalysis() {
     var r = state.result, trades = r.trades, tz = $("tz").value;
-    // R histogram
     var withR = trades.filter(function (t) { return t.r !== null && t.r !== undefined; });
     var edges = [-Infinity, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, Infinity];
     var labels = ["< −1.5R", "−1.5 to −1", "−1 to −0.5", "−0.5 to 0", "0 to 0.5", "0.5 to 1", "1 to 1.5", "1.5 to 2", "2 to 3", "> 3R"];
     var counts = labels.map(function () { return 0; });
     withR.forEach(function (t) { for (var k = 0; k < labels.length; k++) if (t.r >= edges[k] && t.r < edges[k + 1]) { counts[k]++; break; } });
     var maxC = Math.max.apply(null, counts.concat([1]));
-    $("r-hist").innerHTML = withR.length ? '<div class="bars">' + labels.map(function (l, k) {
-      return '<div class="bar-row"><span class="lbl">' + l + '</span><span class="track"><span class="fill ' + (k < 4 ? "neg" : "pos") + '" style="width:' + (counts[k] / maxC * 100).toFixed(1) + '%;display:block"></span></span><span class="cnt">' + counts[k] + "</span></div>";
+    $("r-hist").innerHTML = withR.length ? '<div class="bars" role="list">' + labels.map(function (l, k) {
+      return '<div class="bar-row" role="listitem" aria-label="' + l + ": " + counts[k] + ' trades"><span class="lbl" aria-hidden="true">' + l + '</span><span class="track" aria-hidden="true"><span class="fill ' + (k < 4 ? "neg" : "pos") + '" style="width:' + (counts[k] / maxC * 100).toFixed(1) + '%"></span></span><span class="cnt" aria-hidden="true">' + counts[k] + "</span></div>";
     }).join("") + '</div><p class="hint">Average ' + num(r.metrics.avg_r, 2) + "R over " + withR.length + " trades with a stop.</p>"
-      : '<p class="hint">This strategy has no stop loss, so R can\'t be measured.</p>';
-    // sessions (New York clock)
+      : '<p class="hint">' + (trades.length ? "This strategy has no stop loss, so R can't be measured." : "No trades yet.") + "</p>";
     var sess = { "Asia": [], "London": [], "New York": [] };
     trades.forEach(function (t) {
       var h = localParts(t.entry_time, "America/New_York").hour;
       (h >= 18 || h < 3 ? sess.Asia : h < 8 ? sess.London : h < 17 ? sess["New York"] : sess.Asia).push(t);
     });
-    $("sessions").innerHTML = '<div class="scroll"><table class="sess"><thead><tr><th>Session</th><th class=num>Trades</th><th class=num>Win %</th><th class=num>Net $</th><th class=num>Avg R</th></tr></thead><tbody>' +
+    $("sessions").innerHTML = '<div class="scroll"><table class="sess"><caption class=sr>Results by session</caption><thead><tr><th scope=col>Session</th><th class=num scope=col>Trades</th><th class=num scope=col>Win %</th><th class=num scope=col>Net $</th><th class=num scope=col>Avg R</th></tr></thead><tbody>' +
       Object.keys(sess).map(function (k) {
         var ts = sess[k], net = ts.reduce(function (a, t) { return a + t.pnl; }, 0), w = ts.filter(function (t) { return t.pnl > 0; }).length;
         var rs = ts.filter(function (t) { return t.r !== null; }), ar = rs.length ? rs.reduce(function (a, t) { return a + t.r; }, 0) / rs.length : null;
-        return "<tr><th>" + k + '</th><td class="num">' + ts.length + '</td><td class="num">' + (ts.length ? pct(w / ts.length * 100, 0) : "–") + '</td><td class="num ' + cls(net) + '">' + money(net, 0) + '</td><td class="num">' + (ar === null ? "–" : num(ar, 2)) + "</td></tr>";
+        return "<tr><th scope=row>" + k + '</th><td class="num">' + ts.length + '</td><td class="num">' + (ts.length ? pct(w / ts.length * 100, 0) : "–") + '</td><td class="num ' + cls(net) + '">' + money(net, 0) + '</td><td class="num">' + (ar === null ? "–" : num(ar, 2)) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
-    // hour x weekday heatmap
     var grid = {}, maxAbs = 0;
     trades.forEach(function (t) {
       var lp = localParts(t.entry_time, tz), key = lp.wd + ":" + lp.hour;
       var c = grid[key] || (grid[key] = { pnl: 0, n: 0 }); c.pnl += t.pnl; c.n++;
     });
     Object.keys(grid).forEach(function (k) { maxAbs = Math.max(maxAbs, Math.abs(grid[k].pnl)); });
-    var days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], h = "<thead><tr><th></th>";
-    for (var hr = 0; hr < 24; hr++) h += "<th>" + hr + "</th>";
+    var days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], h = "<caption class=sr>Profit by entry hour (columns) and weekday (rows)</caption><thead><tr><th scope=col>Day</th>";
+    for (var hr = 0; hr < 24; hr++) h += "<th scope=col>" + hr + "</th>";
     h += "</tr></thead><tbody>";
     days.forEach(function (d, wd) {
       var row = "", any = false;
       for (var hr = 0; hr < 24; hr++) {
         var c = grid[wd + ":" + hr];
-        if (!c) { row += '<td class="empty">·</td>'; continue; }
+        if (!c) { row += '<td class="empty-cell"><span class="sr">no trades</span><span aria-hidden="true">·</span></td>'; continue; }
         any = true;
-        row += '<td class="' + cls(c.pnl) + '" style="--a:' + (maxAbs ? Math.abs(c.pnl) / maxAbs : 0).toFixed(2) + '" data-wd="' + wd + '" data-hour="' + hr + '" title="' + d + " " + hr + ":00 · " + c.n + " trades · " + money(c.pnl, 0) + '">' + c.n + "</td>";
+        var lbl = d + " " + hr + ":00, " + c.n + " trades, " + money(c.pnl, 0);
+        row += '<td class="cell ' + cls(c.pnl) + '" tabindex="0" style="--a:' + (maxAbs ? Math.abs(c.pnl) / maxAbs : 0).toFixed(2) + '" data-wd="' + wd + '" data-hour="' + hr + '" title="' + lbl + '"><span class="sr">' + lbl + '. Show trades.</span><span aria-hidden="true">' + c.n + "</span></td>";
       }
-      if (any || wd < 5) h += "<tr><th>" + d + "</th>" + row + "</tr>";
+      if (any || wd < 5) h += "<tr><th scope=row>" + d + "</th>" + row + "</tr>";
     });
     $("heat").innerHTML = h + "</tbody>";
+  }
+  function renderMonthly() {
+    var rows = {}, years = [];
+    state.result.monthly.forEach(function (m) {
+      var y = m.month.slice(0, 4), k = Number(m.month.slice(5, 7));
+      if (!rows[y]) { rows[y] = {}; years.push(y); }
+      rows[y][k] = m.ret;
+    });
+    var names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var h = "<caption class=sr>Monthly returns in percent. Select a month to list its trades.</caption><thead><tr><th scope=col>Year</th>" + names.map(function (n) { return "<th class=num scope=col>" + n + "</th>"; }).join("") + "<th class=num scope=col>Total</th></tr></thead><tbody>";
+    years.forEach(function (y) {
+      var comp = 1;
+      h += "<tr><th scope=row>" + y + "</th>";
+      for (var k = 1; k <= 12; k++) {
+        var v = rows[y][k];
+        if (v === undefined || v === null) { h += "<td></td>"; continue; }
+        comp *= 1 + v / 100;
+        var mm = y + "-" + (k < 10 ? "0" : "") + k;
+        h += '<td class="' + cls(v) + '" style="--a:' + Math.min(Math.abs(v) / 8, 1).toFixed(2) + '" tabindex="0" data-month="' + mm + '" title="Show trades opened in ' + names[k - 1] + " " + y + '">' + (v > 0 ? "+" : "") + v.toFixed(1) + "</td>";
+      }
+      var yr = (comp - 1) * 100;
+      h += '<td class="yr ' + cls(yr) + '">' + (yr > 0 ? "+" : "") + yr.toFixed(1) + "</td></tr>";
+    });
+    $("tab-monthly").innerHTML = '<div class="scroll" tabindex="0" aria-label="Monthly returns"><table class="months">' + h + "</tbody></table></div>";
   }
   function renderProperties() {
     var r = state.result, s = r.settings, rows = [];
@@ -311,41 +380,19 @@
       limit_fill_ticks: "Limit fill ticks", point_value: "Point value", min_qty: "Min size (oz)", qty_step: "Size step (oz)" };
     Object.keys(label).forEach(function (k) { if (k in s) rows.push([label[k], String(s[k])]); });
     var p = r.strategy.params, d = r.data;
-    $("tab-properties").innerHTML = '<div class="props-grid"><div class="scroll"><table><thead><tr><th>Run</th><th></th></tr></thead><tbody>' +
+    var labelsMap = r.strategy.labels || {};
+    $("tab-properties").innerHTML = '<div class="props-grid"><div class="scroll"><table><caption class=sr>Run details</caption><thead><tr><th scope=col>Run</th><th scope=col>Value</th></tr></thead><tbody>' +
       [["Strategy", r.strategy.name], ["Rules version", r.strategy.fingerprint], ["Symbol", d.symbol], ["Timeframe", d.timeframe],
         ["From", d.start.slice(0, 16)], ["To", d.end.slice(0, 16)], ["Bars", d.bars.toLocaleString()], ["Data", d.source]]
-        .concat(Object.keys(p).map(function (k) { return ["Input: " + k, String(p[k])]; }))
-        .map(function (x) { return "<tr><th>" + esc(x[0]) + "</th><td>" + esc(x[1]) + "</td></tr>"; }).join("") +
-      '</tbody></table></div><div class="scroll"><table><thead><tr><th>Broker emulator</th><th></th></tr></thead><tbody>' +
-      rows.map(function (x) { return "<tr><th>" + esc(x[0]) + "</th><td>" + esc(x[1]) + "</td></tr>"; }).join("") + "</tbody></table></div></div>" +
+        .concat(Object.keys(p).map(function (k) { return [(labelsMap[k] || humanize(k)), String(p[k])]; }))
+        .map(function (x) { return "<tr><th scope=row>" + esc(x[0]) + "</th><td>" + esc(x[1]) + "</td></tr>"; }).join("") +
+      '</tbody></table></div><div class="scroll"><table><caption class=sr>Broker emulator settings</caption><thead><tr><th scope=col>Broker emulator</th><th scope=col>Value</th></tr></thead><tbody>' +
+      rows.map(function (x) { return "<tr><th scope=row>" + esc(x[0]) + "</th><td>" + esc(x[1]) + "</td></tr>"; }).join("") + "</tbody></table></div></div>" +
       '<p class="hint">Orders fill on the next bar; stops and targets follow TradingView\'s open → nearer extreme → other extreme → close path.</p>';
-  }
-  function renderMonthly() {
-    var rows = {}, years = [];
-    state.result.monthly.forEach(function (m) {
-      var y = m.month.slice(0, 4), k = Number(m.month.slice(5, 7));
-      if (!rows[y]) { rows[y] = {}; years.push(y); }
-      rows[y][k] = m.ret;
-    });
-    var names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    var h = "<thead><tr><th></th>" + names.map(function (n) { return "<th class=num>" + n + "</th>"; }).join("") + "<th class=num>Year</th></tr></thead><tbody>";
-    years.forEach(function (y) {
-      var comp = 1;
-      h += "<tr><th>" + y + "</th>";
-      for (var k = 1; k <= 12; k++) {
-        var v = rows[y][k];
-        if (v === undefined || v === null) { h += "<td></td>"; continue; }
-        comp *= 1 + v / 100;
-        h += '<td class="' + cls(v) + '" style="--a:' + Math.min(Math.abs(v) / 8, 1).toFixed(2) + ';cursor:pointer" data-month="' + y + "-" + (k < 10 ? "0" : "") + k + '" title="Show this month\'s trades">' + (v > 0 ? "+" : "") + v.toFixed(1) + "</td>";
-      }
-      var yr = (comp - 1) * 100;
-      h += '<td class="yr ' + cls(yr) + '">' + (yr > 0 ? "+" : "") + yr.toFixed(1) + "</td></tr>";
-    });
-    $("tab-monthly").innerHTML = '<div class="scroll"><table class="months">' + h + "</tbody></table></div>";
   }
   function renderCompare() {
     var hist = store.get("history", []);
-    var h = "<thead><tr><th>When</th><th>Strategy</th><th>TF</th><th>Range</th><th>Costs</th><th>Inputs</th><th class=num>Net</th><th class=num>PF</th><th class=num>Max DD</th><th class=num>Trades</th></tr></thead><tbody>";
+    var h = "<caption class=sr>Your previous runs</caption><thead><tr><th scope=col>When</th><th scope=col>Strategy</th><th scope=col>TF</th><th scope=col>Range</th><th scope=col>Costs</th><th scope=col>Inputs</th><th class=num scope=col>Net</th><th class=num scope=col>PF</th><th class=num scope=col>Max DD</th><th class=num scope=col>Trades</th></tr></thead><tbody>";
     h += hist.slice().reverse().map(function (x) {
       return "<tr><td>" + esc(x.when) + '</td><td class="name">' + esc(x.name) + "</td><td>" + esc(x.tf) + "</td><td>" + esc(x.range) + "</td><td>" + esc(x.preset) + '</td><td class="name">' + esc(x.params) + '</td><td class="num ' + cls(x.net) + '">' + money(x.net, 0) + '</td><td class="num">' + num(x.pf, 2) + '</td><td class="num">' + pct(x.dd, 1) + '</td><td class="num">' + x.trades + "</td></tr>";
     }).join("") || '<tr><td colspan="10">No runs yet.</td></tr>';
@@ -361,9 +408,8 @@
   function strategyDef() { return state.strategies[state.current]; }
   function fillStrategySelect() {
     var sel = $("strategy"), mine = [], ex = [];
-    Object.keys(state.strategies).forEach(function (id) { (state.strategies[id].mine ? mine : ex).push(id); });
+    Object.keys(state.strategies).forEach(function (id) { if (id.indexOf("saved:") !== 0) (state.strategies[id].mine ? mine : ex).push(id); });
     var saved = store.get("saved", {});
-    var html = "";
     var group = function (label, ids) {
       if (!ids.length) return "";
       return '<optgroup label="' + label + '">' + ids.map(function (id) {
@@ -372,18 +418,17 @@
     };
     var savedIds = Object.keys(saved).map(function (k) { return "saved:" + k; });
     savedIds.forEach(function (id) { state.strategies[id] = saved[id.slice(6)]; });
-    html += group("Saved in this browser", savedIds) + group("My strategies", mine) + group("Examples", ex);
-    sel.innerHTML = html;
+    sel.innerHTML = group("Saved in this browser", savedIds) + group("My strategies", mine) + group("Examples", ex);
+    if (state.current) sel.value = state.current;
   }
   function fillTimeframes() {
     $("tf").innerHTML = state.meta.timeframes.filter(function (tf) { return state.meta.data[tf]; }).map(function (tf) {
-      return '<button type="button" role="radio" data-tf="' + tf + '">' + tf.toUpperCase().replace("M", "m").replace("H", "h").replace("D", "D") + "</button>";
+      return '<button type="button" aria-pressed="false" data-tf="' + tf + '">' + (tf === "1d" ? "1D" : tf) + "</button>";
     }).join("");
   }
   function markSeg(id, attr, value) {
     document.querySelectorAll("#" + id + " button").forEach(function (b) {
-      var on = String(b.dataset[attr]) === String(value);
-      b.setAttribute(b.getAttribute("role") === "radio" ? "aria-checked" : "aria-pressed", on ? "true" : "false");
+      b.setAttribute("aria-pressed", String(b.dataset[attr]) === String(value) ? "true" : "false");
     });
   }
   function defaultDays(tf) { var d = state.meta.data[tf]; return d && d.default_days ? d.default_days : 0; }
@@ -397,11 +442,10 @@
     $("end").value = d.end;
   }
   function setStrategy(id, keepTf) {
-    if (!state.strategies[id]) return;
+    if (!state.strategies[id]) return false;
     state.current = id;
     var s = strategyDef();
     state.custom = null;
-    state.params = Object.assign({}, s.params);
     $("strategy").value = id;
     if (!keepTf) { state.tf = state.meta.data[s.timeframe] ? s.timeframe : "1h"; state.days = defaultDays(state.tf); }
     markSeg("tf", "tf", state.tf); markSeg("range", "days", state.days); syncDates();
@@ -412,14 +456,18 @@
     renderInputs();
     applyCardSettings(s.settings || {});
     $("yaml").value = s.yaml || "";
+    $("yaml").removeAttribute("aria-invalid");
     $("yaml-status").textContent = "";
-    try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch (e) { /* ignore */ }
+    if (decodeURIComponent(location.hash.slice(1)) !== id) {
+      try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch (e) { /* ignore */ }
+    }
+    return true;
   }
   function renderInputs() {
-    var s = strategyDef(), keys = Object.keys(s.params || {});
+    var s = strategyDef(), keys = Object.keys(s.params || {}), labels = s.labels || {};
     $("inputs").innerHTML = keys.length ? keys.map(function (k) {
-      var v = state.params[k], isInt = Number.isInteger(s.params[k]);
-      return '<label>' + esc(k.replace(/_/g, " ")) + '<input type="number" data-param="' + esc(k) + '" value="' + v + '" step="' + (isInt ? 1 : 0.1) + '" inputmode="decimal"></label>';
+      var v = s.params[k], isInt = Number.isInteger(v);
+      return '<label>' + esc(labels[k] || humanize(k)) + '<input type="number" data-param="' + esc(k) + '" value="' + v + '" step="' + (isInt ? 1 : 0.1) + '" inputmode="decimal"></label>';
     }).join("") : '<p class="hint">This strategy has no inputs.</p>';
   }
   function applyCardSettings(cs) {
@@ -438,6 +486,7 @@
     $("p-spreadfixed-wrap").hidden = $("p-spread").value !== "fixed";
     var tv = state.preset === "tradingview";
     ["p-comm", "p-slip", "p-spread", "p-spreadfixed", "p-swapl", "p-swaps"].forEach(function (id) { $(id).disabled = tv; });
+    $("tv-note").hidden = !tv;
   }
   function readNum(id) { var v = parseFloat($(id).value); return isNaN(v) ? null : v; }
   function buildRequest() {
@@ -458,20 +507,46 @@
     return req;
   }
   function setBusy(on) {
-    state.running = on; $("busy").hidden = !on; $("run").disabled = on;
+    $("busy").hidden = !on; $("run").disabled = on;
     $("run").querySelector(".run-label").textContent = on ? "Running…" : "Run backtest";
+    $("results").setAttribute("aria-busy", on ? "true" : "false");
+    $("results").classList.toggle("busy-state", on && !!state.result);
+    var ov = $("overlay");
+    if (on) { ov.className = "overlay"; $("overlay-text").textContent = "Running backtest…"; ov.hidden = false; }
+    else if (!ov.classList.contains("error")) ov.hidden = true;
+  }
+  function placeholderKpis() {
+    $("kpis").innerHTML = ["Net profit", "Max drawdown", "Profit factor", "Win rate", "Avg trade", "Sharpe", "Trades / month", "Buy &amp; hold"]
+      .map(function (l) { return kpi(l, "0000", "&nbsp;"); }).join("");
+    $("kpis").classList.add("loading");
   }
   function showError(msg) {
-    var box = '<div class="error-box">' + esc(msg) + "</div>";
-    $("kpis").innerHTML = box; $("run-note").textContent = "";
-    toast(msg);
+    $("banner").hidden = false;
+    $("banner").textContent = (state.result ? "This run failed, so the results below are from your previous run. " : "") + msg;
+    $("results").classList.toggle("stale", !!state.result);
+    if (!state.result) {
+      var ov = $("overlay"); ov.className = "overlay error"; $("overlay-text").textContent = "Couldn't run the backtest"; ov.hidden = false;
+      $("kpis").classList.remove("loading");
+    }
+    announce("Backtest failed: " + msg);
+  }
+  function clearError() { $("banner").hidden = true; $("results").classList.remove("stale"); $("overlay").className = "overlay"; }
+  function validDates() {
+    var s = $("start").value, e = $("end").value;
+    if (s && e && s > e) { showError("The start date is after the end date. Pick a start date before " + e + "."); return false; }
+    return true;
   }
   function runBacktest() {
+    if (!state.current) return Promise.resolve();
+    if (!validDates()) return Promise.resolve();
     var req = buildRequest(), my = ++state.seq;
     setBusy(true);
     return api("backtest", req).then(function (r) {
       if (my !== state.seq) return;
+      clearError();
       state.result = r; renderAll(); remember(r, req);
+      var m = r.metrics;
+      announce("Backtest finished: " + r.strategy.name + ", net profit " + money(m.net_profit, 0) + " on " + m.total_trades + " trades, max drawdown " + pct(m.max_drawdown_pct, 1) + ".");
     }).catch(function (e) { if (my === state.seq) showError(e.message); })
       .then(function () { if (my === state.seq) setBusy(false); });
   }
@@ -484,7 +559,7 @@
     store.set("history", hist.slice(-200));
   }
   var debounce = function (fn, ms) { var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; };
-  var autoRun = debounce(runBacktest, 500);
+  var autoRun = debounce(runBacktest, 600);
 
   function runChecks() {
     var btn = $("run-checks"); btn.disabled = true; btn.textContent = "Running checklist…";
@@ -495,15 +570,16 @@
       }).join("");
       $("checks").innerHTML = '<p class="verdict ' + v.verdict + '">' + esc(v.headline) + "</p>" +
         (v.quick ? '<p class="hint">Long range: parameter-stability and look-ahead checks were skipped to stay within the time limit.</p>' : "") +
-        '<div class="scroll"><table class="checks"><thead><tr><th>Result</th><th>Check</th><th>Value</th><th>Rule</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
+        '<div class="scroll" tabindex="0" aria-label="Checklist results"><table class="checks"><caption class=sr>Readiness checks</caption><thead><tr><th scope=col>Result</th><th scope=col>Check</th><th scope=col>Value</th><th scope=col>Rule</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
+      announce("Checklist finished. " + v.headline);
     }).catch(function (e) { $("checks").innerHTML = '<div class="error-box">' + esc(e.message) + "</div>"; })
       .then(function () { btn.disabled = false; btn.textContent = "Run checklist"; });
   }
   function downloadCSV() {
     var r = state.result; if (!r) return;
-    var cols = ["n", "side", "entry_time", "entry_price", "exit_time", "exit_price", "exit_id", "lots", "pnl", "pnl_pct", "runup", "drawdown", "bars", "cum_pnl", "commission"];
+    var cols = ["n", "side", "entry_time", "entry_price", "exit_time", "exit_price", "exit_id", "lots", "pnl", "r", "pnl_pct", "runup", "drawdown", "bars", "cum_pnl", "commission"];
     var lines = [cols.join(",")].concat(r.trades.map(function (t) {
-      return cols.map(function (c) { return /time/.test(c) ? new Date(t[c] * 1000).toISOString() : t[c]; }).join(",");
+      return cols.map(function (c) { return /time/.test(c) ? new Date(t[c] * 1000).toISOString() : (t[c] === null ? "" : t[c]); }).join(",");
     }));
     var blob = new Blob([lines.join("\n")], { type: "text/csv" });
     var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
@@ -515,36 +591,61 @@
     api("pine", req).then(function (r) {
       $("pine-code").textContent = r.pine;
       var d = $("pine-dialog"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+      $("pine-copy").focus();
     }).catch(function (e) { toast(e.message); });
   }
   function saveYaml() {
     var text = $("yaml").value, m = /^name:\s*(.+)$/m.exec(text);
-    if (!m) { $("yaml-status").textContent = "Add a name: line first."; return; }
+    if (!m) { $("yaml-status").textContent = "Add a name: line first, for example name: My idea"; $("yaml").setAttribute("aria-invalid", "true"); return; }
     var name = m[1].trim().replace(/^["']|["']$/g, ""), key = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     state.custom = text;
     $("yaml-status").textContent = "Checking the rules…";
     runBacktest().then(function () {
       var r = state.result;
-      if (!r || r.strategy.name !== name) { $("yaml-status").textContent = "Fix the error above before saving."; return; }
+      if (!r || r.strategy.name !== name || !$("banner").hidden) { $("yaml-status").textContent = "Fix the error shown above the results, then save again."; $("yaml").setAttribute("aria-invalid", "true"); return; }
+      $("yaml").removeAttribute("aria-invalid");
       var saved = store.get("saved", {});
-      saved[key] = { name: name, timeframe: r.data.timeframe, yaml: text, params: r.strategy.params, settings: {}, mine: true,
+      saved[key] = { name: name, timeframe: r.data.timeframe, yaml: text, params: r.strategy.params, labels: r.strategy.labels || {}, settings: {}, mine: true,
         description: "Saved in this browser on " + new Date().toLocaleDateString() + ".", evidence_level: "Your idea" };
       store.set("saved", saved);
       fillStrategySelect();
       setStrategy("saved:" + key, true);
-      $("yaml-status").textContent = "Saved as \u201c" + name + "\u201d in this browser. To keep it for good, add the card to strategies/ in the repo.";
+      $("yaml-status").textContent = "Saved as “" + name + "” in this browser. To keep it for good, add the card to strategies/ in the repo.";
     });
   }
 
-  // ---------------------------------------------------------------- wiring
-  function selectTab(name) {
-    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", x.dataset.tab === name ? "true" : "false"); });
+  // ---------------------------------------------------------------- settings sheet (phones)
+  var BG_PARTS = [".top", ".toolbar", "#summary", ".chart-area", "#results", ".foot"];
+  function isSheet() { return matchMedia("(max-width: 900px)").matches; }
+  function openSheet() {
+    $("panel").classList.add("open"); $("backdrop").hidden = false; $("open-settings").setAttribute("aria-expanded", "true");
+    BG_PARTS.forEach(function (s) { var el = document.querySelector(s); if (el) el.inert = true; });
+    setTimeout(function () { $("close-settings").focus(); }, 50);
+  }
+  function closeSheet() {
+    if (!$("panel").classList.contains("open")) return;
+    $("panel").classList.remove("open"); $("backdrop").hidden = true; $("open-settings").setAttribute("aria-expanded", "false");
+    BG_PARTS.forEach(function (s) { var el = document.querySelector(s); if (el) el.inert = false; });
+    $("open-settings").focus();
+  }
+
+  // ---------------------------------------------------------------- tabs
+  var TABS = ["overview", "performance", "analysis", "trades", "monthly", "checks", "properties", "compare"];
+  function selectTab(name, focus) {
+    document.querySelectorAll(".tabs button").forEach(function (x) {
+      var on = x.dataset.tab === name;
+      x.setAttribute("aria-selected", on ? "true" : "false"); x.tabIndex = on ? 0 : -1;
+      if (on && focus) x.focus();
+    });
     document.querySelectorAll(".tab-body").forEach(function (x) { x.hidden = x.id !== "tab-" + name; });
     if (name === "compare") renderCompare();
     if (name === "overview" && eqChart) eqChart.timeScale().fitContent();
   }
+
+  // ---------------------------------------------------------------- wiring
   function wire() {
     var savedTz = store.get("tz", null); if (savedTz) $("tz").value = savedTz;
+    state.showBH = !!store.get("bh", false); $("bh-toggle").checked = state.showBH;
     $("strategy").addEventListener("change", function () { setStrategy(this.value); runBacktest(); });
     $("tf").addEventListener("click", function (e) {
       var b = e.target.closest("button"); if (!b) return;
@@ -562,10 +663,18 @@
     $("run").addEventListener("click", runBacktest);
     $("inputs").addEventListener("input", autoRun);
     $("props").addEventListener("change", function () { syncPropsUI(); autoRun(); });
-    $("reset-inputs").addEventListener("click", function () { state.params = Object.assign({}, strategyDef().params); renderInputs(); runBacktest(); });
+    $("reset-inputs").addEventListener("click", function () { renderInputs(); runBacktest(); });
+    $("use-min-lot").addEventListener("click", function () {
+      $("p-qtytype").value = "lots"; $("p-qtyvalue").value = 0.01; syncPropsUI();
+      runBacktest().then(function () { toast("Now trading a fixed 0.01 lot. Change it in Settings → Account."); });
+    });
     $("apply-yaml").addEventListener("click", function () {
       state.custom = $("yaml").value; $("yaml-status").textContent = "Running your edited rules…";
-      runBacktest().then(function () { if (state.result) $("yaml-status").textContent = "Showing results for your edited rules (not saved yet)."; });
+      runBacktest().then(function () {
+        var failed = !$("banner").hidden;
+        $("yaml").setAttribute("aria-invalid", failed ? "true" : "false");
+        $("yaml-status").textContent = failed ? "These rules have an error (shown above the results)." : "Showing results for your edited rules (not saved yet).";
+      });
     });
     $("save-yaml").addEventListener("click", saveYaml);
     $("pine-btn").addEventListener("click", showPine);
@@ -573,46 +682,60 @@
     $("pine-copy").addEventListener("click", function () {
       var text = $("pine-code").textContent;
       (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast("Pine Script copied"); })
-        .catch(function () { var r = document.createRange(); r.selectNodeContents($("pine-code")); var s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selected: press copy"); });
+        .catch(function () { var r = document.createRange(); r.selectNodeContents($("pine-code")); var s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Code selected: press copy"); });
     });
-    document.querySelector(".tabs").addEventListener("click", function (e) {
-      var b = e.target.closest("button[data-tab]"); if (b) selectTab(b.dataset.tab);
+    var tabs = document.querySelector(".tabs");
+    tabs.addEventListener("click", function (e) { var b = e.target.closest("button[data-tab]"); if (b) selectTab(b.dataset.tab); });
+    tabs.addEventListener("keydown", function (e) {
+      var cur = TABS.indexOf(document.activeElement.dataset.tab); if (cur < 0) return;
+      var next = { ArrowRight: cur + 1, ArrowLeft: cur - 1, Home: 0, End: TABS.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault(); selectTab(TABS[(next + TABS.length) % TABS.length], true);
     });
-    $("prev-trade").addEventListener("click", function () { stepTrade(-1); });
-    $("next-trade").addEventListener("click", function () { stepTrade(1); });
-    $("close-trade").addEventListener("click", clearSelection);
-    $("tz").addEventListener("change", function () { store.set("tz", this.value); if (state.result) renderAnalysis(); });
-    $("tab-monthly").addEventListener("click", function (e) {
-      var td = e.target.closest("td[data-month]"); if (!td) return;
-      showTradesWith({ type: "month", value: td.dataset.month, label: "trades opened in " + td.dataset.month });
-    });
-    $("heat").addEventListener("click", function (e) {
-      var td = e.target.closest("td[data-wd]"); if (!td) return;
-      var tz = $("tz").value, d = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][Number(td.dataset.wd)];
-      showTradesWith({ type: "heat", wd: Number(td.dataset.wd), hour: Number(td.dataset.hour), tz: tz,
-        label: "trades opened " + d + " " + td.dataset.hour + ":00–" + td.dataset.hour + ":59 (" + $("tz").selectedOptions[0].textContent + ")" });
-    });
-    $("clear-extra").addEventListener("click", function () { state.extra = null; renderTrades(); });
     $("trade-filter").addEventListener("click", function (e) {
       var b = e.target.closest("button"); if (!b) return;
       state.filter = b.dataset.f; document.querySelectorAll("#trade-filter button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
       renderTrades();
     });
-    $("trades").addEventListener("click", function (e) {
-      var tr = e.target.closest("tr[data-n]"); if (!tr) return;
-      var n = Number(tr.dataset.n); var t = state.result.trades.find(function (x) { return x.n === n; }); if (t) focusTrade(t);
-    });
+    var pickTrade = function (tr) { var n = Number(tr.dataset.n); var t = state.result.trades.find(function (x) { return x.n === n; }); if (t) focusTrade(t); };
+    $("trades").addEventListener("click", function (e) { var tr = e.target.closest("tr[data-n]"); if (tr) pickTrade(tr); });
+    $("trades").addEventListener("keydown", function (e) { var tr = e.target.closest("tr[data-n]"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pickTrade(tr); } });
     $("csv").addEventListener("click", downloadCSV);
     $("run-checks").addEventListener("click", runChecks);
-    $("clear-history").addEventListener("click", function () { store.set("history", []); renderCompare(); });
-    $("open-settings").addEventListener("click", function () { $("panel").classList.add("open"); });
-    $("close-settings").addEventListener("click", function () { $("panel").classList.remove("open"); });
+    $("clear-history").addEventListener("click", function () { store.set("history", []); renderCompare(); toast("History cleared"); });
+    $("open-settings").addEventListener("click", openSheet);
+    $("close-settings").addEventListener("click", closeSheet);
+    $("backdrop").addEventListener("click", closeSheet);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && $("panel").classList.contains("open")) closeSheet(); });
+    matchMedia("(max-width: 900px)").addEventListener("change", function () { if (!isSheet()) closeSheet(); });
+    $("prev-trade").addEventListener("click", function () { stepTrade(-1); });
+    $("next-trade").addEventListener("click", function () { stepTrade(1); });
+    $("close-trade").addEventListener("click", clearSelection);
+    $("bh-toggle").addEventListener("change", function () { state.showBH = this.checked; store.set("bh", state.showBH); drawEquity(); });
+    $("tz").addEventListener("change", function () { store.set("tz", this.value); if (state.result) renderAnalysis(); });
+    var monthPick = function (td) { showTradesWith({ type: "month", value: td.dataset.month, label: "trades opened in " + td.dataset.month }); };
+    $("tab-monthly").addEventListener("click", function (e) { var td = e.target.closest("td[data-month]"); if (td) monthPick(td); });
+    $("tab-monthly").addEventListener("keydown", function (e) { var td = e.target.closest("td[data-month]"); if (td && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); monthPick(td); } });
+    var heatPick = function (td) {
+      var tz = $("tz").value, d = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][Number(td.dataset.wd)];
+      showTradesWith({ type: "heat", wd: Number(td.dataset.wd), hour: Number(td.dataset.hour), tz: tz,
+        label: "trades opened " + d + " " + td.dataset.hour + ":00–" + td.dataset.hour + ":59 (" + $("tz").selectedOptions[0].textContent + ")" });
+    };
+    $("heat").addEventListener("click", function (e) { var td = e.target.closest("td[data-wd]"); if (td) heatPick(td); });
+    $("heat").addEventListener("keydown", function (e) { var td = e.target.closest("td[data-wd]"); if (td && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); heatPick(td); } });
+    $("clear-extra").addEventListener("click", function () { state.extra = null; renderTrades(); });
+    window.addEventListener("hashchange", function () {
+      var id = decodeURIComponent(location.hash.slice(1));
+      if (id && id !== state.current && state.strategies[id]) { setStrategy(id); runBacktest(); }
+    });
   }
 
   // ---------------------------------------------------------------- boot
   initCharts();
   wire();
   markSeg("preset", "preset", state.preset);
+  placeholderKpis();
+  setBusy(true);
   api("strategies").then(function (meta) {
     state.meta = meta;
     meta.strategies.forEach(function (s) { state.strategies[s.id] = s; });
@@ -622,5 +745,5 @@
     if (!state.strategies[first]) first = meta.strategies[0].id;
     setStrategy(first);
     return runBacktest();
-  }).catch(function (e) { showError("Could not reach the backtest server: " + e.message); });
+  }).catch(function (e) { setBusy(false); showError(e.message); });
 })();

@@ -12,6 +12,7 @@ page cannot run arbitrary code or tie the server up.
 """
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import asdict, fields
@@ -27,6 +28,7 @@ from .journal import slugify
 from .rules import RuleError, RuleStrategy
 
 MAX_YAML = 20_000
+MAX_BODY = 64_000
 MAX_BARS = 150_000
 MAX_CANDLES = 30_000
 MAX_TRADES = 3_000
@@ -200,7 +202,7 @@ def op_strategies(_req: dict | None = None) -> dict:
             "id": p.stem, "name": card.get("name", p.stem), "timeframe": card.get("timeframe", "1h"),
             "description": (card.get("description") or "").strip(), "evidence": card.get("evidence"),
             "evidence_level": _evidence_level(card.get("evidence")), "tags": card.get("tags", []),
-            "params": card.get("params") or {}, "settings": card.get("settings") or {},
+            "params": card.get("params") or {}, "labels": card.get("labels") or {}, "settings": card.get("settings") or {},
             "mine": p.parent.name == "strategies", "yaml": p.read_text(),
             "report": f"/strategies/{slugify(card.get('name', p.stem))}.html",
         })
@@ -261,6 +263,7 @@ def op_backtest(req: dict) -> dict:
     a = df.attrs
     return {
         "strategy": {"name": s.name, "description": s.description, "timeframe": tf, "params": vars(s.p),
+                     "labels": dict(s.card.get("labels") or {}),
                      "evidence": s.card.get("evidence"), "evidence_level": _evidence_level(s.card.get("evidence")),
                      "fingerprint": s.fingerprint()},
         "data": {"symbol": "XAUUSD", "timeframe": tf, "source": a.get("source"), "start": str(df.index[0]),
@@ -318,3 +321,27 @@ def handle(op: str, req: dict | None) -> tuple[int, dict]:
         return 400, {"error": f"Could not run this strategy: {e}"}
     except RecursionError:
         return 400, {"error": "Expression is too deeply nested"}
+
+
+GET_OPS = {"strategies"}
+
+
+def route(method: str, op: str, raw: bytes | None = None) -> tuple[int, dict]:
+    """HTTP rules shared by the Vercel function and the local preview server."""
+    if op not in OPS:
+        return 404, {"error": f"Unknown operation '{op}'"}
+    if method == "GET":
+        if op not in GET_OPS:
+            return 405, {"error": "Use POST for this operation"}
+        return handle(op, None)
+    if method != "POST":
+        return 405, {"error": "Use GET or POST"}
+    if raw and len(raw) > MAX_BODY:
+        return 413, {"error": "Request too large"}
+    try:
+        req = json.loads(raw or b"{}")
+    except ValueError:
+        return 400, {"error": "Body must be JSON"}
+    if not isinstance(req, dict):
+        return 400, {"error": "Body must be a JSON object"}
+    return handle(op, req)

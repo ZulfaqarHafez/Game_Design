@@ -60,8 +60,8 @@ def sharpe_sortino(equity: pd.Series, initial: float, rfr_annual: float = 2.0):
     eq = pd.Series(equity.to_numpy(), index=idx).groupby(idx.to_period("M")).last()
     eq = pd.concat([pd.Series([initial]), eq.reset_index(drop=True)])
     r = eq.pct_change().dropna().to_numpy() * 100
-    if len(r) < 2:
-        return float("nan"), float("nan")
+    if len(r) < 2 or not np.any(r):
+        return float("nan"), float("nan")      # flat account (no trades): no risk-adjusted return to report
     rf = rfr_annual / 12
     ex = r - rf
     sd = r.std(ddof=0)  # TradingView divides by N (population standard deviation)
@@ -115,6 +115,8 @@ def compute(trades: pd.DataFrame, equity: pd.Series, equity_low: pd.Series, equi
         r = pd.to_numeric(trades["r"], errors="coerce").dropna()
         m["avg_r"] = float(r.mean()) if len(r) else float("nan")
         m["trades_with_r"] = int(len(r))
+    m["long_trades"] = m["short_trades"] = 0
+    m["long_net_profit"] = m["short_net_profit"] = 0.0
     if n:
         longs = trades["side"] == "long"
         m["long_trades"] = int(longs.sum())

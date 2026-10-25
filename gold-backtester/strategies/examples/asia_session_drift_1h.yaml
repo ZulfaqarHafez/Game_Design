@@ -10,6 +10,8 @@ tags: [seasonality, session, research]
 evidence: "Peer-reviewed for COMEX 1985-2012 (overnight positive, day negative) plus a 2001-2018 thesis (Sharpe 1.61 before costs, underperforms after costs). The effect may be weakening."
 params:
   trend_len: 200
+labels:
+  trend_len: "Daily trend filter SMA (days)"
 vars:
   daily_trend_ok: security("1d", "close > sma(close, trend_len)")
   buy_time: in_session("18:00-19:00", "America/New_York")

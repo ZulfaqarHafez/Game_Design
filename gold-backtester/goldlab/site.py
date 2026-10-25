@@ -26,7 +26,7 @@ RESEARCH = REPO / "reports" / "TradingView gold backtest and automation.md"
 CSS = """
 :root {
   --bg: #f4f5f2; --panel: #ffffff; --ink: #1b1f24; --muted: #5d6670; --line: #dcdfd8;
-  --gold: #9a6b12; --gold-soft: #f1e3c2; --up: #1f7a52; --down: #b23a32; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
+  --gold: #805608; --gold-soft: #f1e3c2; --up: #1a6c48; --down: #a12e28; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif; --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -53,6 +53,7 @@ a { color: var(--gold); }
 a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .facts { display: flex; flex-wrap: wrap; gap: 6px 22px; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; color: var(--muted); }
 .scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.scroll:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 thead th { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -66,7 +67,7 @@ td.name small { display: block; color: var(--muted); font-size: 12.5px; white-sp
 .pos { color: var(--up); } .neg { color: var(--down); }
 .chip { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
 .chip.ready { background: var(--up-soft); color: var(--up); } .chip.not-ready { background: var(--down-soft); color: var(--down); }
-.chip.caution { background: var(--gold-soft); color: var(--gold); } .chip.level { background: var(--line); color: var(--muted); }
+.chip.caution { background: var(--gold-soft); color: var(--gold); } .chip.level { background: var(--bg); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; min-width: 0; }
 .card ol, .card ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
@@ -195,9 +196,10 @@ def _index(rows: list[dict]) -> str:
   <div class="facts"><span>Data: Dukascopy {first:%b %Y} – {last:%b %Y}</span><span>Account: $10,000</span>
   <span>Costs: spread + $7/lot + $0.05 slippage + swap</span><span>Built {built}</span></div>
 </header>
+<main>
 <section>
   <h2>Strategies</h2>
-  <div class="scroll"><table class="list">
+  <div class="scroll" tabindex="0" role="region" aria-label="Strategies"><table class="list">
     <thead><tr><th>Strategy</th><th>TF</th><th class="num">Net profit</th><th class="num">Profit factor</th>
     <th class="num">Max DD</th><th class="num">Trades</th><th>Verdict</th></tr></thead>
     <tbody>{''.join(trs)}</tbody></table></div>
@@ -229,6 +231,7 @@ def _index(rows: list[dict]) -> str:
     </ol>
   </section>
 </div>
+</main>
 <footer>
   <span>Backtests describe the past and are not financial advice. Leveraged gold CFDs can lose more than you expect.</span>
   <span>Charts: <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a> (Apache-2.0).
@@ -247,5 +250,6 @@ def _research(md_text: str) -> str:
         body = f"<pre>{html.escape(md_text)}</pre>"
     return (HEAD.format(title="Gold research report · Gold Strategy Lab",
                         desc="How TradingView works, what can be reused, gold data, costs, validation and automation.", css=CSS)
-            + f'<div class="wrap"><a class="back" href="./">← Backtester</a> · <a class="back" href="library.html">Library</a><article class="doc">{body}</article>'
+            + f'<div class="wrap"><header><a class="back" href="./">← Backtester</a> · <a class="back" href="library.html">Library</a></header>'
+            + f'<main><article class="doc">{body}</article></main>'
             + '<footer><span>Not financial or legal advice.</span></footer></div></body></html>')

@@ -184,22 +184,22 @@ def cmd_serve(a):
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import parse_qs, urlparse
-    from .webapi import handle
+    from .webapi import MAX_BODY, route
 
     class H(SimpleHTTPRequestHandler):
-        def _api(self, body):
-            u = urlparse(self.path)
-            op = (parse_qs(u.query).get("op") or [""])[0]
-            code, out = handle(op, body)
+        def _api(self, method, raw=None):
+            op = (parse_qs(urlparse(self.path).query).get("op") or [""])[0]
+            code, out = route(method, op, raw)
             data = _json.dumps(out).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
         def do_GET(self):
             if self.path.startswith("/api/lab"):
-                return self._api(None)
+                return self._api("GET")
             return super().do_GET()
 
         def do_POST(self):
@@ -207,7 +207,7 @@ def cmd_serve(a):
                 self.send_error(404)
                 return
             n = int(self.headers.get("Content-Length") or 0)
-            self._api(_json.loads(self.rfile.read(n) or b"{}"))
+            self._api("POST", self.rfile.read(min(n, MAX_BODY + 1)) if n > 0 else b"")
 
         def log_message(self, *args):
             pass

@@ -12,6 +12,11 @@ params:
   exit_len: 20
   atr_len: 20
   atr_mult: 2.0
+labels:
+  entry_len: "Breakout lookback (bars)"
+  exit_len: "Exit lookback (bars)"
+  atr_len: "ATR length (bars)"
+  atr_mult: "Stop distance (× ATR)"
 vars:
   upper: highest(high, entry_len)
   lower: lowest(low, entry_len)

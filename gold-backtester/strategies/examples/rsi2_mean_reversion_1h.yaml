@@ -15,6 +15,14 @@ params:
   exit_len: 5
   atr_mult: 2.0
   max_hold: 5
+labels:
+  rsi_len: "RSI length (bars)"
+  lo: "Buy when RSI below"
+  hi: "Sell when RSI above"
+  trend_len: "Trend filter SMA (bars)"
+  exit_len: "Exit SMA (bars)"
+  atr_mult: "Stop distance (× ATR)"
+  max_hold: "Max bars in trade"
 vars:
   r: rsi(close, rsi_len)
   trend: sma(close, trend_len)

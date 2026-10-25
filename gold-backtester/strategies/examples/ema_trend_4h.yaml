@@ -12,6 +12,11 @@ params:
   slow: 200
   atr_len: 14
   atr_mult: 3.0
+labels:
+  fast: "Fast EMA length (bars)"
+  slow: "Slow EMA length (bars)"
+  atr_len: "ATR length (bars)"
+  atr_mult: "Stop distance (× ATR)"
 vars:
   fast_ma: ema(close, fast)
   slow_ma: ema(close, slow)

@@ -82,7 +82,7 @@ def _monthly_table(equity: pd.Series, initial: float) -> str:
         yr = (ye.iloc[-1] / start - 1) * 100 if len(ye) else float("nan")
         cls = "pos" if yr > 0 else "neg"
         rows.append(f"<tr><th>{y}</th>{''.join(cells)}<td class=\"yr {cls}\">{yr:+.1f}</td></tr>")
-    return (f'<div class="scroll"><table class="months"><thead><tr><th></th>{head}<th>Year</th></tr></thead>'
+    return (f'<div class="scroll" tabindex="0" role="region" aria-label="Monthly returns"><table class="months"><thead><tr><th>Year</th>{head}<th>Full year</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -98,7 +98,7 @@ def _validation_html(v: dict | None) -> str:
                     f'<td class="muted">{html.escape(c.get("rule", ""))}</td></tr>')
     verdict = v.get("verdict", "")
     return (f'<p class="verdict {verdict.lower()}">{html.escape(v.get("headline", ""))}</p>'
-            f'<div class="scroll"><table class="checks"><thead><tr><th>Result</th><th>Check</th><th>Value</th>'
+            f'<div class="scroll" tabindex="0" role="region" aria-label="Readiness checks"><table class="checks"><thead><tr><th>Result</th><th>Check</th><th>Value</th>'
             f'<th>Rule</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -226,7 +226,7 @@ TEMPLATE = r"""<title>{title}</title>
 /* Layout: a trading-desk report. Summary strip, then the chart, then the evidence tables. */
 :root {{
   --bg: #f4f5f2; --panel: #ffffff; --ink: #1b1f24; --muted: #5d6670; --line: #dcdfd8;
-  --gold: #9a6b12; --gold-soft: #f1e3c2; --up: #1f7a52; --down: #b23a32; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
+  --gold: #805608; --gold-soft: #f1e3c2; --up: #1a6c48; --down: #a12e28; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif; --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }}
@@ -261,6 +261,7 @@ section {{ display: grid; gap: 10px; min-width: 0; }}
 .legend {{ display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); }}
 .legend i {{ display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }}
 .cols {{ display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 28px; }}
+.scroll:focus-visible {{ outline: 2px solid var(--gold); outline-offset: 2px; }}
 .scroll {{ overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }}
 table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
 th, td {{ text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }}
@@ -280,7 +281,7 @@ table.months td.yr {{ font-weight: 600; background: transparent; }}
 table.months td.yr.pos {{ color: var(--up); }} table.months td.yr.neg {{ color: var(--down); }}
 .chip {{ font-family: var(--body); font-size: 11.5px; font-weight: 700; letter-spacing: .05em; padding: 2px 8px; border-radius: 99px; }}
 .chip.pass {{ background: var(--up-soft); color: var(--up); }} .chip.fail {{ background: var(--down-soft); color: var(--down); }}
-.chip.warn {{ background: var(--gold-soft); color: var(--gold); }} .chip.info {{ background: var(--line); color: var(--muted); }}
+.chip.warn {{ background: var(--gold-soft); color: var(--gold); }} .chip.info {{ background: var(--bg); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }}
 .verdict {{ font-weight: 600; }} .verdict.ready {{ color: var(--up); }} .verdict.not-ready {{ color: var(--down); }} .verdict.caution {{ color: var(--gold); }}
 .settings {{ font-family: var(--mono); font-size: 12.5px; color: var(--muted); }}
 footer {{ font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }}
@@ -298,6 +299,7 @@ a.back:hover, a.back:focus-visible {{ text-decoration: underline; }}
     <p>{desc}</p>
     {evidence}
   </header>
+  <main>
   <div class="kpis">{kpis}</div>
   <section>
     <div class="chart-box">
@@ -307,15 +309,16 @@ a.back:hover, a.back:focus-visible {{ text-decoration: underline; }}
     </div>
   </section>
   <div class="cols">
-    <section><h2>Performance</h2><div class="scroll"><table><thead><tr><th></th><th>All</th><th>Long</th><th>Short</th></tr></thead><tbody>{perf}</tbody></table></div></section>
-    <section><h2>Risk and returns</h2><div class="scroll"><table class="kv"><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>{risk}</tbody></table></div></section>
+    <section><h2>Performance</h2><div class="scroll" tabindex="0" role="region" aria-label="Performance"><table><thead><tr><th>Measure</th><th>All</th><th>Long</th><th>Short</th></tr></thead><tbody>{perf}</tbody></table></div></section>
+    <section><h2>Risk and returns</h2><div class="scroll" tabindex="0" role="region" aria-label="Risk and returns"><table class="kv"><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody>{risk}</tbody></table></div></section>
   </div>
   <section><h2>Monthly returns (%)</h2>{months}</section>
   <section><h2>Is it ready to automate?</h2>{validation}</section>
   <section><h2>List of trades</h2><p class="muted">{ntrades} closed trades, newest first (up to 500 shown).</p>
-    <div class="scroll trades"><table><thead><tr><th>#</th><th>Side</th><th>Entry time (UTC)</th><th class="num">Entry</th><th>Exit time (UTC)</th><th class="num">Exit</th><th>Exit by</th><th class="num">Lots</th><th class="num">P&amp;L $</th><th class="num">Bars</th></tr></thead><tbody>{trades}</tbody></table></div></section>
+    <div class="scroll trades" tabindex="0" role="region" aria-label="List of trades"><table><thead><tr><th>#</th><th>Side</th><th>Entry time (UTC)</th><th class="num">Entry</th><th>Exit time (UTC)</th><th class="num">Exit</th><th>Exit by</th><th class="num">Lots</th><th class="num">P&amp;L $</th><th class="num">Bars</th></tr></thead><tbody>{trades}</tbody></table></div></section>
   <section><h2>Assumptions</h2><p class="settings">{cost}</p><p class="muted">Parameters: {params}</p>
     <p class="muted">Fills follow TradingView's broker emulator: orders fill on the next bar, stops and targets are resolved along the open→nearest extreme→other extreme→close path. Past results don't guarantee future results.</p></section>
+  </main>
   <footer><span>Generated by goldlab. Charts: <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a> (Apache-2.0).</span></footer>
 </div>
 <script src="{lwc}"></script>
