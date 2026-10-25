@@ -1,0 +1,18 @@
+Time-series momentum (1/3/12 month blend) | XAUUSD 1d | 2019-01-02 -> 2026-10-01 | 2,001 bars
+  Net profit                         1,320.93
+  Net profit %                       13.21%
+  Total closed trades                118
+  Percent profitable                 36.44%
+  Profit factor                      1.713
+  Max equity drawdown (intrabar)     495.88
+  Max equity drawdown %              4.71%
+  Avg trade                          11.19
+  Ratio avg win / avg loss           2.988
+  Sharpe ratio                       -0.121
+  Sortino ratio                      -0.168
+  CAGR %                             0.93%
+  Buy & hold return %                214.45%
+  Commission paid                    9.59
+  Overnight swap paid                573.85
+  Time in market %                   64.22%
+  Orders skipped (too small)         307

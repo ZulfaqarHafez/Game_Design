@@ -1,0 +1,18 @@
+Asia-session drift (long overnight, flat in US hours) | XAUUSD 1h | 2019-01-01 -> 2026-09-30 | 45,825 bars
+  Net profit                         -1,249.72
+  Net profit %                       -12.50%
+  Total closed trades                1367
+  Percent profitable                 49.89%
+  Profit factor                      0.984
+  Max equity drawdown (intrabar)     6,772.88
+  Max equity drawdown %              44.79%
+  Avg trade                          -0.91
+  Ratio avg win / avg loss           0.988
+  Sharpe ratio                       -0.013
+  Sortino ratio                      -0.020
+  CAGR %                             -1.71%
+  Buy & hold return %                174.18%
+  Commission paid                    956.90
+  Overnight swap paid                0.00
+  Time in market %                   27.07%
+  Orders skipped (too small)         0

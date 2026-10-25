@@ -1,0 +1,18 @@
+RSI(2) pullback with 200 SMA trend filter | XAUUSD 1h | 2019-01-01 -> 2026-09-30 | 45,825 bars
+  Net profit                         -3,227.72
+  Net profit %                       -32.28%
+  Total closed trades                2066
+  Percent profitable                 59.63%
+  Profit factor                      0.817
+  Max equity drawdown (intrabar)     3,709.63
+  Max equity drawdown %              36.99%
+  Avg trade                          -1.56
+  Ratio avg win / avg loss           0.553
+  Sharpe ratio                       -0.491
+  Sortino ratio                      -0.484
+  CAGR %                             -5.36%
+  Buy & hold return %                221.90%
+  Commission paid                    573.58
+  Overnight swap paid                248.05
+  Time in market %                   13.37%
+  Orders skipped (too small)         295

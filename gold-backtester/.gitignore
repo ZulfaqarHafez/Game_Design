@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+# raw downloads (re-creatable); the curated samples in data/sample are committed
+data/cache/
+# secrets and live state
+live.yaml
+news_blackout.yaml
+KILL
+journal/live/
+.env
+# large generated reports (re-create with --report)
+journal/runs/*/report.html
+journal/reports/

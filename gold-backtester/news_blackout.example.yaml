@@ -1,0 +1,5 @@
+# EXAMPLE entries only: the dates below are placeholders. Copy to news_blackout.yaml and fill in the
+# real US CPI / FOMC / NFP times (UTC) from the official calendars. The bot opens no new trades from 15 min before to 15 min after.
+- {name: "US CPI", time: "2026-11-12T13:30:00Z"}
+- {name: "FOMC decision", time: "2026-12-09T19:00:00Z"}
+- {name: "US jobs report (NFP)", time: "2026-11-06T13:30:00Z"}

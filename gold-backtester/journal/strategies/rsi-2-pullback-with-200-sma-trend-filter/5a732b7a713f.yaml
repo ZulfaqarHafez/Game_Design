@@ -1,0 +1,49 @@
+name: RSI(2) pullback with 200 SMA trend filter
+fingerprint: 5a732b7a713f
+first_seen: '2026-10-25T06:03:35.713811+00:00'
+kind: card
+description: 'Buy short, sharp dips inside an uptrend: long when RSI(2) drops below
+  10 while price is above its 200 SMA; mirror for shorts. Exit on a close back above
+  the 5 SMA (below for shorts), when RSI(2) recovers, or after 5 bars. 2x ATR stop.'
+---
+name: RSI(2) pullback with 200 SMA trend filter
+description: 'Buy short, sharp dips inside an uptrend: long when RSI(2) drops below
+  10 while price is above its 200 SMA; mirror for shorts. Exit on a close back above
+  the 5 SMA (below for shorts), when RSI(2) recovers, or after 5 bars. 2x ATR stop.
+
+  '
+timeframe: 1h
+symbol: XAUUSD
+tags:
+- mean-reversion
+- swing
+evidence: 'Folklore for gold: no gold-specific peer-reviewed evidence found. Popular
+  in equity indices.'
+params:
+  rsi_len: 2
+  lo: 10
+  hi: 90
+  trend_len: 200
+  exit_len: 5
+  atr_mult: 2.0
+  max_hold: 5
+vars:
+  r: rsi(close, rsi_len)
+  trend: sma(close, trend_len)
+  exit_ma: sma(close, exit_len)
+long:
+  when: is_flat and r < lo and close > trend
+  sl_dist: atr_mult * atr(14)
+short:
+  when: is_flat and r > hi and close < trend
+  sl_dist: atr_mult * atr(14)
+exit:
+  long_when: close > exit_ma or r > 70
+  short_when: close < exit_ma or r < 30
+  max_bars: max_hold
+plots:
+  SMA 200: trend
+  SMA 5: exit_ma
+settings:
+  qty_type: risk_percent
+  qty_value: 0.5

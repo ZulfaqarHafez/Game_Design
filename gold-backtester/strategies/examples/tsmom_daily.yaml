@@ -1,0 +1,33 @@
+name: Time-series momentum (1/3/12 month blend)
+description: >
+  The best-documented edge in the research: trade in the direction of gold's
+  own past return. Average the sign of the 21, 63 and 252 trading-day returns.
+  Long when the blend is positive, short when negative. Stop at 3x ATR(20).
+timeframe: 1d
+symbol: XAUUSD
+tags: [trend, momentum, position]
+evidence: "Peer-reviewed: Moskowitz, Ooi & Pedersen (JFE 2012) find time-series momentum in all 58 futures including gold; AQR century study. Results are for diversified portfolios, not gold alone."
+params:
+  short_lb: 21
+  mid_lb: 63
+  long_lb: 252
+  atr_mult: 3.0
+vars:
+  s1: (close > close[short_lb]) * 1 - (close < close[short_lb]) * 1
+  s2: (close > close[mid_lb]) * 1 - (close < close[mid_lb]) * 1
+  s3: (close > close[long_lb]) * 1 - (close < close[long_lb]) * 1
+  blend: (s1 + s2 + s3) / 3
+long:
+  when: blend > 0 and not is_long
+  sl_dist: atr_mult * atr(20)
+  trail_dist: atr_mult * atr(20)
+short:
+  when: blend < 0 and not is_short
+  sl_dist: atr_mult * atr(20)
+  trail_dist: atr_mult * atr(20)
+exit:
+  long_when: blend <= 0
+  short_when: blend >= 0
+settings:
+  qty_type: risk_percent
+  qty_value: 1.0

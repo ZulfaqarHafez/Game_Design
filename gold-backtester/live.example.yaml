@@ -1,0 +1,47 @@
+# Copy to live.yaml (git-ignored) and edit. Secrets come from environment variables only.
+#   python -m goldlab paper ema_trend_4h            # paper account, Yahoo GC=F prices (no account needed)
+#   python -m goldlab paper ema_trend_4h --broker oanda   # OANDA practice account
+#   python -m goldlab webhook --port 8080           # TradingView alerts -> broker
+
+history_bars: 1500
+
+paper:
+  feed: yahoo            # yahoo (GC=F futures, no account) | oanda (needs the oanda section below)
+  initial_equity: 10000
+
+oanda:
+  account_id: "101-000-0000000-001"
+  token_env: OANDA_TOKEN     # export OANDA_TOKEN=...   (never put the token in this file)
+  environment: practice      # practice | live
+
+mt5:
+  symbol: XAUUSD             # your broker's exact name, e.g. XAUUSD.m or GOLD
+  magic: 20261025
+  login: null                # leave null to use the terminal's logged-in account
+  server: null
+  password_env: MT5_PASSWORD
+  server_utc_offset_hours: 0 # many brokers run GMT+2/+3 server time; set it so bars line up with UTC
+
+risk:
+  max_lots: 0.10
+  max_order_lots: 0.10
+  max_daily_loss_usd: 200
+  max_orders_per_day: 10
+  max_spread: 1.0
+  trade_window_utc: "00:00-24:00"
+  blackout_file: news_blackout.yaml
+  blackout_minutes_before: 15
+  blackout_minutes_after: 15
+  kill_switch_file: KILL      # `touch KILL` in this folder to flatten and stop new orders
+  require_stop_loss: true
+
+webhook:
+  broker: paper               # paper | oanda | mt5
+  secret_env: GOLDLAB_WEBHOOK_SECRET
+  allowed_ips: [52.89.214.238, 34.212.75.30, 54.218.53.128, 52.32.178.7]   # TradingView's webhook servers
+  max_age_seconds: 60
+  emergency_stop_dist: 15.0   # USD/oz broker-side stop when an alert carries no sl
+  units_per_tradingview_unit: 1.0
+
+# Leave false until you have paper traded the strategy and it behaves like the backtest.
+i_understand_this_trades_real_money: false

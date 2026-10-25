@@ -1,0 +1,18 @@
+Donchian 55/20 breakout (Turtle-style) | XAUUSD 4h | 2019-01-01 -> 2026-09-30 | 12,396 bars
+  Net profit                         2,779.10
+  Net profit %                       27.79%
+  Total closed trades                203
+  Percent profitable                 30.54%
+  Profit factor                      1.517
+  Max equity drawdown (intrabar)     944.98
+  Max equity drawdown %              9.42%
+  Avg trade                          13.69
+  Ratio avg win / avg loss           3.450
+  Sharpe ratio                       -0.000
+  Sortino ratio                      -0.000
+  CAGR %                             1.86%
+  Buy & hold return %                224.85%
+  Commission paid                    37.10
+  Overnight swap paid                1,239.45
+  Time in market %                   52.52%
+  Orders skipped (too small)         1524

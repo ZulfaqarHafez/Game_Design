@@ -1,0 +1,38 @@
+name: Donchian 55/20 breakout (Turtle-style)
+description: >
+  Buy a break of the 55-bar high, sell a break of the 55-bar low (stop orders,
+  so the fill happens on the break, not the next bar). Exit when price makes a
+  20-bar extreme against the trade, or at a 2x ATR(20) stop.
+timeframe: 4h
+symbol: XAUUSD
+tags: [trend, breakout, swing]
+evidence: "Trend family (peer-reviewed for futures portfolios). Gold-only parameters unproven."
+params:
+  entry_len: 55
+  exit_len: 20
+  atr_len: 20
+  atr_mult: 2.0
+vars:
+  upper: highest(high, entry_len)
+  lower: lowest(low, entry_len)
+  exit_low: lowest(low, exit_len)
+  exit_high: highest(high, exit_len)
+long:
+  when: is_flat and close < upper
+  order: stop
+  price: upper + 0.01
+  sl_dist: atr_mult * atr(atr_len)
+short:
+  when: is_flat and close > lower
+  order: stop
+  price: lower - 0.01
+  sl_dist: atr_mult * atr(atr_len)
+exit:
+  long_when: close < exit_low[1]
+  short_when: close > exit_high[1]
+plots:
+  Donchian upper: upper
+  Donchian lower: lower
+settings:
+  qty_type: risk_percent
+  qty_value: 0.5

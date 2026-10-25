@@ -1,0 +1,18 @@
+EMA 50/200 trend, ATR trailing stop | XAUUSD 4h | 2019-01-01 -> 2026-09-30 | 12,396 bars
+  Net profit                         537.92
+  Net profit %                       5.38%
+  Total closed trades                64
+  Percent profitable                 29.69%
+  Profit factor                      1.511
+  Max equity drawdown (intrabar)     287.34
+  Max equity drawdown %              2.72%
+  Avg trade                          8.41
+  Ratio avg win / avg loss           3.578
+  Sharpe ratio                       -0.236
+  Sortino ratio                      -0.351
+  CAGR %                             0.52%
+  Buy & hold return %                223.63%
+  Commission paid                    8.19
+  Overnight swap paid                131.60
+  Time in market %                   9.66%
+  Orders skipped (too small)         5

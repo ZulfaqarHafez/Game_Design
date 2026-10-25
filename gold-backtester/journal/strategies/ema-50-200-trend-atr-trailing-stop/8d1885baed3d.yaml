@@ -1,0 +1,44 @@
+name: EMA 50/200 trend, ATR trailing stop
+fingerprint: 8d1885baed3d
+first_seen: '2026-10-25T06:03:31.209078+00:00'
+kind: card
+description: Classic trend following. Go long when the 50 EMA crosses above the 200
+  EMA, short when it crosses below. A 3x ATR stop trails behind the best price. The
+  opposite cross reverses the position.
+---
+name: EMA 50/200 trend, ATR trailing stop
+description: 'Classic trend following. Go long when the 50 EMA crosses above the 200
+  EMA, short when it crosses below. A 3x ATR stop trails behind the best price. The
+  opposite cross reverses the position.
+
+  '
+timeframe: 4h
+symbol: XAUUSD
+tags:
+- trend
+- swing
+evidence: Trend family has peer-reviewed support (time-series momentum, Moskowitz-Ooi-Pedersen
+  2012); these exact parameters for gold are unproven.
+params:
+  fast: 50
+  slow: 200
+  atr_len: 14
+  atr_mult: 3.0
+vars:
+  fast_ma: ema(close, fast)
+  slow_ma: ema(close, slow)
+  stop_dist: atr_mult * atr(atr_len)
+long:
+  when: crossover(fast_ma, slow_ma)
+  sl_dist: stop_dist
+  trail_dist: stop_dist
+short:
+  when: crossunder(fast_ma, slow_ma)
+  sl_dist: stop_dist
+  trail_dist: stop_dist
+plots:
+  EMA fast: fast_ma
+  EMA slow: slow_ma
+settings:
+  qty_type: risk_percent
+  qty_value: 0.5

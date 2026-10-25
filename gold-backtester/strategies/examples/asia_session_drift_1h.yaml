@@ -1,0 +1,23 @@
+name: Asia-session drift (long overnight, flat in US hours)
+description: >
+  Research template for a documented time-of-day effect: gold has tended to rise
+  during Asian hours and fall during Western hours. Buy at 18:00 New York (after
+  the daily break), sell at 08:00 London. Only trade when the daily close is
+  above its 200-day average. Very cost sensitive: check it with realistic costs.
+timeframe: 1h
+symbol: XAUUSD
+tags: [seasonality, session, research]
+evidence: "Peer-reviewed for COMEX 1985-2012 (overnight positive, day negative) plus a 2001-2018 thesis (Sharpe 1.61 before costs, underperforms after costs). The effect may be weakening."
+params:
+  trend_len: 200
+vars:
+  daily_trend_ok: security("1d", "close > sma(close, trend_len)")
+  buy_time: in_session("18:00-19:00", "America/New_York")
+  sell_time: in_session("08:00-09:00", "Europe/London")
+long:
+  when: buy_time and is_flat and daily_trend_ok > 0
+exit:
+  long_when: sell_time
+settings:
+  qty_type: lots
+  qty_value: 0.1

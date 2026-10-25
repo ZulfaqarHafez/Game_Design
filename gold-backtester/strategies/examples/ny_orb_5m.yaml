@@ -1,0 +1,37 @@
+name: New York (COMEX) opening range breakout
+description: >
+  Take the high and low of the first 15 minutes after the COMEX gold open
+  (08:20-08:35 New York). Trade the first break of that range with a stop at
+  the other side, one trade per day, flat by 16:00 New York.
+timeframe: 5m
+symbol: XAUUSD
+tags: [breakout, session, intraday]
+evidence: "Opening-range breakouts have evidence in equities and a crude-oil working paper only; replications on CFDs were roughly break-even after costs."
+params:
+  target_r: 2.0
+vars:
+  or_hi: session_high("08:20-08:35", "America/New_York")
+  or_lo: session_low("08:20-08:35", "America/New_York")
+  window: in_session("08:35-12:00", "America/New_York")
+  setup: window and is_flat and trades_today == 0 and or_hi > or_lo
+long:
+  when: setup and close < or_hi
+  order: stop
+  price: or_hi + 0.05
+  sl: or_lo - 0.05
+  tp_r: target_r
+short:
+  when: setup and close > or_lo
+  order: stop
+  price: or_lo - 0.05
+  sl: or_hi + 0.05
+  tp_r: target_r
+exit:
+  when: in_session("15:55-16:00", "America/New_York")
+oca_entries: true
+plots:
+  OR high: or_hi
+  OR low: or_lo
+settings:
+  qty_type: risk_percent
+  qty_value: 0.5
