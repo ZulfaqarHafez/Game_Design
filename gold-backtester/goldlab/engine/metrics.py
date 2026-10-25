@@ -111,6 +111,10 @@ def compute(trades: pd.DataFrame, equity: pd.Series, equity_low: pd.Series, equi
     m["avg_bars_in_losses"] = bars[losses].mean() if losses.any() else float("nan")
     m["expectancy_r"] = (m["percent_profitable"] / 100 * m["win_loss_ratio"]
                          - (1 - m["percent_profitable"] / 100)) if wins.any() and losses.any() else float("nan")
+    if n and "r" in trades:
+        r = pd.to_numeric(trades["r"], errors="coerce").dropna()
+        m["avg_r"] = float(r.mean()) if len(r) else float("nan")
+        m["trades_with_r"] = int(len(r))
     if n:
         longs = trades["side"] == "long"
         m["long_trades"] = int(longs.sum())

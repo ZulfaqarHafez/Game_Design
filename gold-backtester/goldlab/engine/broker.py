@@ -135,6 +135,7 @@ class Trade:
     best: float          # most favourable price seen
     worst: float         # most adverse price seen
     trail_active: dict = field(default_factory=dict)  # exit id -> watermark
+    init_stop: float | None = None                     # stop in force when the trade opened (for R multiples)
 
 
 class Broker:
@@ -340,6 +341,11 @@ class Broker:
         self._log("fill", order=o.id, side=o.side, qty=qty, price=price)
         if o.bracket:
             self.exit(f"{o.id} exit", o.id, **o.bracket)
+        stops = [self._exit_levels(ex, t)[0] for ex in self.exits.values()
+                 if ex.from_entry in (None, o.id)]
+        stops = [x for x in stops if x is not None and t.side * (price - x) > 0]
+        if stops:
+            t.init_stop = max(stops) if t.side == LONG else min(stops)
         if o.oca:
             for k in [k for k, e in self.entries.items() if e.oca == o.oca and k != o.id]:
                 del self.entries[k]
@@ -377,7 +383,10 @@ class Broker:
             "runup": max(0.0, t.side * (t.best - t.entry_price)) * qty * pv,
             "drawdown": max(0.0, -t.side * (t.worst - t.entry_price)) * qty * pv,
             "bars": bar - t.entry_bar, "comment": comment or t.entry_comment,
+            "risk": abs(t.entry_price - t.init_stop) * qty * pv if t.init_stop is not None else float("nan"),
         })
+        row = self.closed[-1]
+        row["r"] = pnl / row["risk"] if row["risk"] and row["risk"] > 0 else float("nan")
         self._log("fill", order=exit_id, side=-t.side, qty=qty, price=price)
         t.qty = round(t.qty - qty, 8)
         t.entry_commission -= entry_fee

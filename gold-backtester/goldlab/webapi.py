@@ -235,7 +235,8 @@ def op_backtest(req: dict) -> dict:
                        "exit_price": _num(row.exit_price), "exit_id": str(row.exit_id), "lots": _num(row.lots),
                        "pnl": _num(row.pnl), "pnl_pct": _num(row.pnl_pct), "runup": _num(row.runup),
                        "drawdown": _num(row.drawdown), "bars": int(row.bars), "cum_pnl": _num(row.cum_pnl),
-                       "commission": _num(row.commission)})
+                       "commission": _num(row.commission), "r": _num(getattr(row, "r", None)),
+                       "risk": _num(getattr(row, "risk", None))})
     max_c = int(min(req.get("max_candles") or MAX_CANDLES, MAX_CANDLES))
     shown = df.iloc[-max_c:]
     secs = shown.index.as_unit("s").asi8  # unit-safe: indexes may be stored in ns or us

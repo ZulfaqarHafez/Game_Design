@@ -45,6 +45,12 @@
   <section class="chart-area" aria-label="Price chart">
     <div class="legend" id="legend"></div>
     <div id="chart"></div>
+    <div class="trade-nav" id="trade-nav" hidden>
+      <button class="btn" id="prev-trade" type="button" aria-label="Previous trade">‹</button>
+      <span id="trade-nav-label"></span>
+      <button class="btn" id="next-trade" type="button" aria-label="Next trade">›</button>
+      <button class="btn ghost" id="close-trade" type="button" aria-label="Clear selected trade">✕</button>
+    </div>
     <div class="chart-note" id="chart-note"></div>
     <div class="busy" id="busy" hidden><span></span></div>
   </section>
@@ -120,9 +126,11 @@
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button role="tab" data-tab="performance">Performance</button>
+      <button role="tab" data-tab="analysis">Analysis</button>
       <button role="tab" data-tab="trades">Trades</button>
       <button role="tab" data-tab="monthly">Monthly</button>
       <button role="tab" data-tab="checks">Checks</button>
+      <button role="tab" data-tab="properties">Properties</button>
       <button role="tab" data-tab="compare">Compare</button>
     </div>
     <div class="tab-body" id="tab-overview">
@@ -132,6 +140,21 @@
       <p class="hint" id="run-note"></p>
     </div>
     <div class="tab-body" id="tab-performance" hidden></div>
+    <div class="tab-body" id="tab-analysis" hidden>
+      <div class="row an-tools"><label class="tz">Hours in
+        <select id="tz">
+          <option value="Asia/Singapore">Singapore time</option>
+          <option value="Europe/London">London time</option>
+          <option value="America/New_York">New York time</option>
+          <option value="UTC">UTC</option>
+        </select></label></div>
+      <div class="an-grid">
+        <section class="card"><h3>Trade results in R</h3><p class="hint">R = profit ÷ the money at risk at entry (entry to initial stop). −1R is a full stop-out.</p><div id="r-hist"></div></section>
+        <section class="card"><h3>By session</h3><p class="hint">Grouped by entry time: Asia 18:00–03:00, London 03:00–08:00, New York 08:00–17:00 (New York clock).</p><div id="sessions"></div></section>
+      </div>
+      <section class="card"><h3>Profit by entry hour and weekday</h3><p class="hint">Each cell sums the P&amp;L of trades opened in that hour. Tap a cell to list those trades.</p>
+        <div class="scroll"><table class="heat" id="heat"></table></div></section>
+    </div>
     <div class="tab-body" id="tab-trades" hidden>
       <div class="row trades-tools">
         <div class="seg small" id="trade-filter">
@@ -140,6 +163,7 @@
         </div>
         <button class="btn ghost" id="csv" type="button">Download CSV</button>
       </div>
+      <p class="filter-chip" id="extra-filter" hidden><span></span> <button class="btn link" id="clear-extra" type="button">Show all</button></p>
       <div class="scroll trades-scroll"><table class="trades" id="trades"></table></div>
     </div>
     <div class="tab-body" id="tab-monthly" hidden></div>
@@ -149,6 +173,7 @@
       <button class="btn" id="run-checks" type="button">Run checklist</button>
       <div id="checks"></div>
     </div>
+    <div class="tab-body" id="tab-properties" hidden></div>
     <div class="tab-body" id="tab-compare" hidden>
       <p class="hint">Every run you make is listed here (kept in this browser). Trying many variants and keeping the best
         is how backtests fool people: the checklist's Deflated Sharpe ratio corrects for it.</p>
