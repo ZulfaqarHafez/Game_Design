@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gold research report · Gold Strategy Lab</title>
+<meta name="description" content="How TradingView works, what can be reused, gold data, costs, validation and automation.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1b1f24; --muted: #5d6670; --line: #dcdfd8;
+  --gold: #9a6b12; --gold-soft: #f1e3c2; --up: #1f7a52; --down: #b23a32; --up-soft: rgba(31,122,82,.14); --down-soft: rgba(178,58,50,.14);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif; --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11151b; --panel: #171c24; --ink: #e7e9ec; --muted: #98a1ab; --line: #2a313b;
+  --gold: #e0b252; --gold-soft: #3a3020; --up: #3fb984; --down: #f0675d; --up-soft: rgba(63,185,132,.18); --down-soft: rgba(240,103,93,.18);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11151b; --panel: #171c24; --ink: #e7e9ec; --muted: #98a1ab; --line: #2a313b;
+  --gold: #e0b252; --gold-soft: #3a3020; --up: #3fb984; --down: #f0675d; --up-soft: rgba(63,185,132,.18); --down-soft: rgba(240,103,93,.18);
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 36px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 36px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+h1 { font-family: var(--display); font-stretch: 80%; font-weight: 780; font-size: clamp(34px, 6vw, 60px); line-height: 1.02; margin: 6px 0 12px; text-wrap: balance; }
+h2 { font-family: var(--display); font-stretch: 88%; font-weight: 700; font-size: 22px; margin: 0 0 12px; text-wrap: balance; }
+h3 { font-family: var(--display); font-stretch: 90%; font-weight: 700; font-size: 18px; margin: 24px 0 8px; }
+p, li { max-width: 70ch; }
+p { margin: 0 0 12px; }
+.lead { font-size: 18px; color: var(--muted); }
+a { color: var(--gold); }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+thead th { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+th.num { text-align: right; }
+.wrap > *, section { min-width: 0; }
+td.name a { font-weight: 650; text-decoration: none; color: var(--ink); }
+td.name a:hover { color: var(--gold); text-decoration: underline; }
+td.name small { display: block; color: var(--muted); font-size: 12.5px; white-space: normal; max-width: 34ch; }
+.pos { color: var(--up); } .neg { color: var(--down); }
+.chip { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.chip.ready { background: var(--up-soft); color: var(--up); } .chip.not-ready { background: var(--down-soft); color: var(--down); }
+.chip.caution { background: var(--gold-soft); color: var(--gold); } .chip.level { background: var(--line); color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; min-width: 0; }
+.card ol, .card ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+code { font-family: var(--mono); font-size: 13.5px; background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; border-top: 1px solid var(--line); padding-top: 18px; }
+.doc { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: clamp(18px, 4vw, 44px); min-width: 0; }
+.doc table { display: block; overflow-x: auto; font-size: 13.5px; }
+.doc th, .doc td { white-space: normal; min-width: 12ch; vertical-align: top; }
+.doc h1 { font-size: clamp(28px, 5vw, 44px); }
+.doc h2 { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); }
+.doc blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid var(--gold); color: var(--muted); }
+.back { font-weight: 600; text-decoration: none; font-size: 14px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  table.list thead { display: none; }
+  table.list, table.list tbody { display: block; }
+  table.list tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; padding: 14px 16px;
+    border-bottom: 1px solid var(--line); }
+  table.list tr:last-child { border-bottom: 0; }
+  table.list td { padding: 0; border: 0; white-space: normal; text-align: left; }
+  table.list td.name { grid-column: 1 / -1; }
+  table.list td[data-label]::before { content: attr(data-label); display: block; font-family: var(--body);
+    font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  table.list td.verdict { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style></head><body>
+<div class="wrap"><a class="back" href="./">← Gold Strategy Lab</a><article class="doc"><h1>Copy TradingView's rules, never its data</h1>
+<p>TradingView is a display-licensed data business with an unusually well-documented simulator on top. Its full charting library, its websocket feed and its market data are proprietary, and its terms forbid automated or "non-display" use of them. The Pine Script broker emulator's fill rules and nearly every strategy-report metric, by contrast, are published in enough detail to re-implement from scratch. A retail trader in Singapore should therefore build a Python engine that copies TradingView's documented conventions: signals on the bar close, market fills at the next bar's open, an "open-nearest-extreme-first" path inside each bar, fills at the open when price gaps through a level, slippage in ticks, commission on both legs, metrics from closed trades, and a monthly Sharpe ratio. The engine should run on gold data sourced elsewhere, mainly Dukascopy's free bid/ask history back to 2003, and never on scraped TradingView bars. TradingView's own CSV export of a strategy's trade list then works as a legal golden reference: match it on a few windows to prove parity, and the engine can go far beyond TradingView's 5,000–40,000-bar intraday caps. Trust in the results comes from discipline, not from the equity curve. That means a ledger that counts every variant tried, Deflated Sharpe and PBO thresholds, walk-forward tests split across gold's very different 2023–2026 volatility regimes, and cost stress at 1×, 1.5× and 2×, because nearly every gold intraday study found lost its gross edge once realistic costs were applied. For automation, keep the same strategy code in a self-hosted engine with a risk gate and stops held at the broker. Treat TradingView webhooks only as an optional signal input, since they time out after 3 seconds and have no documented retries. Execute through a MAS-licensed broker. OANDA's v20 REST API is the most practical default, provided its Singapore entity confirms API access. None of this is legal advice, and several plan, broker and regulatory details below need checking live before real money is committed.</p>
+<h2>TradingView splits into an open chart, a closed feed and a published simulator</h2>
+<p>TradingView's charting comes in two families that are open to very different degrees. <strong>Lightweight Charts is open source under Apache-2.0.</strong> It is about 45 KB, ships no indicators and makes no network requests: you push your own bars into it (<a href="https://www.tradingview.com/charting-library-docs/latest/product-comparison">Product comparison</a>). The current core release is <strong>v5.2.1 (12 August 2026)</strong>. The first official plugin packages, <code>@tradingview/lwc-toolkit</code> plus ten plugins, followed on 16 September 2026. The licence requires you to keep the NOTICE text and a link to tradingview.com, and the <code>attributionLogo</code> option can show that link on the chart itself (<a href="https://github.com/tradingview/lightweight-charts/releases">GitHub releases</a>; <a href="https://github.com/tradingview/lightweight-charts">GitHub tradingview/lightweight-charts</a>). Advanced Charts and Trading Platform power the familiar full TradingView interface. They are proprietary and live in a private GitHub repository that requires approval. TradingView licenses them only to companies for public, non-paywalled projects, and explicitly <strong>"not for personal use, hobbies, studies, or testing"</strong> (<a href="https://www.tradingview.com/free-charting-libraries/">TradingView free charting libraries</a>; <a href="https://in.tradingview.com/charting-library-docs/latest/introduction/">Charting Library docs, Introduction</a>). Obtaining them from third parties is "strictly prohibited and may lead to legal consequences" (<a href="https://ar.tradingview.com/charting-library-docs/latest/quick-start.md">Charting Library docs, Get started</a>). For a private backtester, Lightweight Charts is the only legitimate TradingView chart, and v5 maps well onto a backtest UI. <code>createSeriesMarkers</code> draws entry and exit arrows, panes hold indicator sub-charts, custom series and primitives draw stop/target boxes, and data conflation (added in v5.1.0) handles multi-year M1 histories (<a href="https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5">LWC v4→v5 migration guide</a>; <a href="https://github.com/tradingview/lightweight-charts/releases">GitHub releases</a>).</p>
+<p>The libraries also show how TradingView structures data. Advanced Charts contains no market data. It asks a datafeed supplied by the host, either through a JavaScript Datafeed API or through the HTTP <strong>UDF protocol</strong>. UDF's <code>/history</code> endpoint takes <code>symbol</code>, <code>resolution</code>, <code>from</code>, <code>to</code> (exclusive, in Unix seconds) and <code>countback</code> (which takes priority over <code>from</code>). It returns column arrays <code>{s, t, o, h, l, c, v}</code>, with daily bars stamped 00:00 UTC (<a href="https://www.tradingview.com/charting-library-docs/latest/connecting_data/UDF/">UDF docs</a>). UDF does not stream, so TradingView recommends the JS Datafeed API for real-time data. Shaping your own bar service like UDF costs nothing, maps one-to-one onto Lightweight Charts bar arrays, and keeps a path open if the tool ever becomes a public product. TradingView's free widgets, by contrast, run on TradingView's servers and cannot take your data (<a href="https://www.tradingview.com/charting-library-docs/latest/product-comparison">Product comparison</a>).</p>
+<p>The tradingview.com web app runs on a feed TradingView has never documented. There is <strong>no public market-data API</strong>, meaning "no general-purpose REST endpoint you can call with a symbol and a date range and get candles back" (<a href="https://blog.traderspost.io/article/tradingview-api">TradersPost</a>). What is known comes from open-source clients. The app holds a websocket to <code>data.tradingview.com</code> and exchanges length-prefixed JSON messages. The client must echo the server's heartbeats. It opens separate chart and quote sessions, resolves a symbol with session and adjustment parameters, and requests a series of N bars that streams back until a completion message arrives. Live bar updates then follow on the same connection (<a href="https://raw.githubusercontent.com/rongardF/tvdatafeed/main/tvDatafeed/main.py">rongardF/tvdatafeed main.py</a>; <a href="https://unpkg.com/tradingview-api-adapter@2.0.0/README.md">tradingview-api-adapter README</a>). Access is tied to the logged-in user's token or session cookies. Anonymous connections get "shorter intraday history, no Pine studies, and possibly delayed feeds" (<a href="https://github.com/Mathieu2301/TradingView-API">Mathieu2301/TradingView-API</a>). History depth depends on plan: <strong>5,000 intraday bars on the base tier, 10,000 on Essential and Plus, 20,000 on Premium, 25,000 on Expert and 40,000 on Ultimate</strong>, with daily and higher timeframes unlimited. TradingView says these caps "cannot be extended for now due to technical reasons" (<a href="https://www.tradingview.com/support/solutions/43000480679">Help Center: intraday data limits</a>). Spot gold trades about 1,380 minutes a day, so the caps equal roughly 3.6 to 29 trading days of M1 history on a chart. Deep Backtesting (Premium and above) lets a strategy calculation use up to 2 million bars from TradingView's storage (<a href="https://www.tradingview.com/support/solutions/43000668210/">Help Center: Deep Backtesting data</a>). TradingView also states that some displayed prices are <strong>"derived data"</strong>: for non-professional users it produces the displayed price through a 2-factor derivation, and "at no point is raw data accessible by any client" (<a href="https://www.tradingview.com/policies/">Terms of Use §11</a>). That is one more reason not to treat scraped TradingView bars as a research dataset.</p>
+<p>"Gold" on TradingView is not a single series. OANDA:XAUUSD is a USD-quoted CFD with <code>pricescale=1000</code>, so <strong>its tick is $0.001</strong>, and its exchange timezone is America/New_York. FOREXCOM, Pepperstone and FX XAUUSD tick at $0.01. TVC:GOLD is a composite. COMEX:GC1! is a continuous 100-oz futures contract ticking at $0.10 (<a href="https://scanner.tradingview.com/symbol?symbol=OANDA:XAUUSD&amp;fields=pricescale,minmov,pointvalue,currency,type,description,minmove2,timezone,exchange&amp;no_404=true">TradingView scanner endpoint, OANDA:XAUUSD</a>; <a href="https://scanner.tradingview.com/symbol?symbol=FOREXCOM:XAUUSD&amp;fields=pricescale,minmov,pointvalue,currency,type&amp;no_404=true">scanner endpoint, FOREXCOM:XAUUSD</a>; <a href="https://www.tradingview.com/symbols/COMEX-GC1!/">TradingView COMEX:GC1!</a>). A broker-affiliated guide says two spot feeds typically differ by $0.20–0.60. It also says TVC:GOLD can sit $3–8 away from executable fills, and that futures carry a contango premium of $1–2 or more (<a href="https://fortraders.com/es/blog/xau-usd-tradingview-grafico-oro">For Traders, Sep 2026</a>). A backtester's symbol model therefore needs more than a ticker: vendor, instrument type, contract size, tick size, session template and timezone. Run the backtest on the feed of the broker you will trade with.</p>
+<h2>The broker emulator is a dozen documented rules and one consequential guess</h2>
+<p>By default a Pine strategy runs once per bar, at the bar's close, and every order carries a one-tick delay. So <strong>a market order generated on bar t fills at the open of bar t+1</strong>. The documentation's own example has a signal on bar 20 filling at bar 21's open (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#orders-and-trades">Strategies page, Orders and trades</a>). Setting <code>process_orders_on_close=true</code> lets orders created on the closing tick fill at that close; the July 2026 UI shows this as "Order execution delay: None". <code>strategy.close(..., immediately=true)</code> does the same for a single exit (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#process_orders_on_close">Strategies page, process_orders_on_close</a>). Each of the other execution options trades realism for responsiveness. <code>calc_on_every_tick</code> changes only realtime bars, so the strategy repaints. <code>calc_on_order_fills</code> re-runs the script on fills while historical <code>high</code> and <code>low</code> already hold their final values; the docs show this producing exits "at the bar's exact high". The new <code>calc_on_every_history_tick</code> (July 2026, Premium and Ultimate only) runs the script on four synthetic ticks per historical bar (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#calc_on_order_fills">Strategies page, calc_on_order_fills</a>; <a href="https://www.tradingview.com/pine-script-docs/release-notes/">Release notes</a>).</p>
+<p>The consequential guess concerns what happens inside a historical bar. Pine cannot see the real path, so the emulator assumes one. If the open is closer to the high, price went <strong>open → high → low → close</strong>; if it is closer to the low, open → low → high → close. Prices inside a bar count as continuous, so any level within the range can fill a pending order. If price jumps across a level between bars, though, the order fills at the next bar's open rather than at the level (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#broker-emulator">Strategies page, Broker emulator</a>). This rule decides every bar where both a stop and a target lie inside the range. It is the largest single source of divergence between TradingView, other engines and reality, and it depends only on where the open sits, not on how the bar closed. Premium and Ultimate users can replace it with "High" bar detalization (formerly the Bar Magnifier, <code>use_bar_magnifier=true</code>). That mode walks the OHLC of lower-timeframe bars chosen from a fixed table: 2-minute bars for a 15-minute chart, 10-minute for 1-hour, 30-minute for 4-hour and 60-minute for daily. It covers up to <strong>200,000 lower-timeframe bars</strong>, and older bars fall back to the heuristic (<a href="https://www.tradingview.com/support/solutions/43000669285-what-is-bar-magnifier-backtesting-mode/">Help Center: bar magnifier</a>; <a href="https://www.tradingview.com/pine-script-docs/language/declaration-statements/#use_bar_magnifier">Declaration statements page</a>). On a 15-minute gold chart, 200,000 two-minute bars cover only about 13 months of 23-hour sessions. An engine fed Dukascopy M1 data can magnify every bar back to 2003.</p>
+<p>Price orders follow the same path logic. A limit fills at its price or better when touched. A limit placed on the side that is already marketable fills on the next tick, like a market order. A stop triggers at its price or worse. A stop-limit's trigger creates a limit order, which fills only if price then reaches it (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#limit-orders">Strategies page, Limit orders</a>; <a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#stop-and-stop-limit-orders">Strategies page, Stop and stop-limit orders</a>). By default, limits are guaranteed to fill on touch. The <code>backtest_fill_limits_assumption</code> setting, now a "Limit order execution" dropdown with only "reaches" and "one tick beyond", delays the fill until price trades through the level. It still fills at the limit price, as "a necessary compromise" to avoid lookahead bias (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#slippage-and-unfilled-limits">Strategies page, Slippage and unfilled limits</a>). Slippage is a fixed number of ticks added in the adverse direction to <strong>market and stop fills only, never to limits</strong>. Because it is constant, it can push fills outside the bar's range (<a href="https://www.tradingview.com/pine-script-docs/language/declaration-statements/#slippage-and-backtest_fill_limits_assumption">Declaration statements page</a>). On OANDA:XAUUSD a tick is $0.001, so one or two ticks of slippage is meaningless for gold; a $0.20 spread takes about 200 ticks. Commission comes in three forms: percent of transaction value, cash per contract and cash per order. It is charged on <strong>both entry and exit</strong> and deducted inside each trade's P&amp;L. Gross profit and gross loss are therefore already net of fees, and the "Commission paid" figure excludes slippage (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#commission">Strategies page, Commission</a>; <a href="https://www.tradingview.com/support/solutions/43000681686-gross-profit/">Help Center: Gross profit</a>; <a href="https://www.tradingview.com/support/solutions/43000681703-commission-paid/">Help Center: Commission paid</a>).</p>
+<p><code>strategy.exit()</code> builds take-profit (limit), stop-loss (stop) and trailing exits, either as tick distances from the entry price or as absolute prices. Since Pine v6, when both forms are given, it uses whichever level is expected to trigger first; v5 always preferred the absolute price (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#take-profit-and-stop-loss">Strategies page, strategy.exit()</a>; <a href="https://www.tradingview.com/pine-script-docs/migration-guides/to-pine-version-6/#strategyexit-evaluates-parameter-pairs">v6 migration guide</a>). Each exit call reserves its quantity in code order, and all exit orders share an OCA "reduce" group. Only the first leg of a bracket to trigger fills. Positions close first-in-first-out unless <code>close_entries_rule="ANY"</code> is set. An entry in the opposite direction closes and reverses the position in a single transaction (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#partial-and-multi-level-exits">Strategies page, Partial and multi-level exits</a>; <a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#closing-a-market-position">Strategies page, Closing a market position</a>; <a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#reversing-positions">Strategies page, Reversing positions</a>). The defaults are one contract, <strong>1,000,000 units of initial capital</strong>, pyramiding of 1 and, since v6, 100% margin. v5 defaulted to 0% margin, meaning unlimited leverage, which the docs call "extremely misleading" (<a href="https://www.tradingview.com/pine-script-docs/language/declaration-statements/#initial_capital-and-currency">Declaration statements page, initial_capital</a>; <a href="https://www.tradingview.com/pine-script-docs/migration-guides/to-pine-version-6/#default-margin-percentage">v6 migration guide</a>; <a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#margin-and-leverage">Strategies page, Margin and leverage</a>). Percent-of-equity sizing is <code>qty = (pct × equity / 100) / close</code>. It uses the signal bar's close and equity that includes open profit, so the actual notional drifts when the next bar opens with a gap (<a href="https://www.tradingview.com/support/solutions/43000651235-i-see-cannot-create-an-order-with-negative-quantity-error/">Help Center: negative quantity error</a>). A margin call fires when equity falls to the margin requirement, and it liquidates four times the computed shortfall. Conversion into the account currency uses the previous day's FX rate (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#margin-and-leverage">Strategies page, Margin and leverage</a>; <a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#currency">Strategies page, Currency</a>).</p>
+<p>Almost every report metric comes from <strong>closed trades with commission already deducted</strong>. Net P&amp;L is the sum of closed trades. Profit factor is gross profit divided by the absolute gross loss. Percent profitable counts break-even trades in the denominator but not the numerator. Average trade is net P&amp;L divided by the number of closed trades (<a href="https://www.tradingview.com/support/solutions/43000681684-net-pnl/">Help Center: Net PnL</a>; <a href="https://www.tradingview.com/support/solutions/43000681698-profit-factor/">Help Center: Profit factor</a>; <a href="https://www.tradingview.com/support/solutions/43000681714-percent-profitable/">Help Center: Percent profitable</a>; <a href="https://www.tradingview.com/support/solutions/43000681715-average-pnl/">Help Center: Average PnL</a>). Max drawdown (intrabar) is unconventional. For every bar a long trade is open, TradingView computes peak closed-trade equity minus equity at entry, plus contracts × (entry − bar low). The peak is never raised by open profit, so a trade that runs far into profit and falls back to breakeven adds nothing to drawdown (<a href="https://www.tradingview.com/support/solutions/43000681690-max-drawdown-intrabar/">Help Center: Max drawdown intrabar</a>). Since August 2024, Sharpe and Sortino <strong>always use monthly returns</strong> (<a href="https://www.tradingview.com/pine-script-docs/release-notes/">Release notes</a>). Sharpe is (mean monthly return − risk-free rate) ÷ population standard deviation. The risk-free rate defaults to 2% a year and can be changed only in code. No annualisation factor appears in the formula, and the annual-to-monthly conversion (2/12) is documented only for TradingView's separate Portfolio product, so check it against a known output (<a href="https://www.tradingview.com/support/solutions/43000681694-sharpe-ratio/">Help Center: Sharpe ratio</a>; <a href="https://www.tradingview.com/pine-script-docs/language/declaration-statements/#risk_free_rate">Declaration statements page, risk_free_rate</a>; <a href="https://www.tradingview.com/support/solutions/43000756107/">Help Center: Portfolio Sharpe</a>). Sortino's target return is not specified (<a href="https://www.tradingview.com/support/solutions/43000681697-sortino-ratio/">Help Center: Sortino ratio</a>). CAGR uses a 365-day year. Buy-and-hold is measured from the first trade, not the first bar. Account size required is max margin used plus the absolute intrabar max drawdown (<a href="https://www.tradingview.com/support/solutions/43000772911-annualized-return-cagr/">Help Center: CAGR</a>; <a href="https://www.tradingview.com/support/solutions/43000772912-buy-and-hold-gain/">Help Center: Buy and hold % gain</a>; <a href="https://www.tradingview.com/support/solutions/43000772918-account-size-required/">Help Center: Account size required</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Behaviour</th>
+<th>TradingView default (documented)</th>
+<th>How to implement it in your engine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Signal evaluation</td>
+<td>Once per bar, at the close</td>
+<td><code>on_bar(t)</code> sees only data up to and including bar t</td>
+</tr>
+<tr>
+<td>Market order fill</td>
+<td>Open of bar t+1, plus slippage ticks</td>
+<td><code>open[t+1] ± slip</code>; <code>close[t]</code> only as a logged opt-in</td>
+</tr>
+<tr>
+<td>Path inside the bar</td>
+<td>Open → nearer extreme → far extreme → close</td>
+<td>Same, plus an M1-magnified mode and a pessimistic stop-first mode</td>
+</tr>
+<tr>
+<td>Level crossed in a gap</td>
+<td>Fills at the next bar's open</td>
+<td>Fill at the worse of level and open for stops; the better for limits</td>
+</tr>
+<tr>
+<td>Limits</td>
+<td>Fill at level or better on touch</td>
+<td>Same, with an optional "one tick through" check</td>
+</tr>
+<tr>
+<td>Slippage</td>
+<td>Fixed ticks, market and stop orders only</td>
+<td>Same, plus a time-of-day spread model on bid/ask</td>
+</tr>
+<tr>
+<td>Commission</td>
+<td>Percent, per contract or per order; both legs; inside trade P&amp;L</td>
+<td>Same</td>
+</tr>
+<tr>
+<td>Exits</td>
+<td>Brackets in an OCA-reduce group, FIFO, reversal in one transaction</td>
+<td>Per-trade FIFO list; reservations in code order</td>
+</tr>
+<tr>
+<td>Sizing</td>
+<td><code>pct × equity / close</code> at the signal bar, equity includes open P&amp;L</td>
+<td>Same, rounded down to the broker's lot step</td>
+</tr>
+<tr>
+<td>Margin</td>
+<td>100% default (v6); margin call liquidates 4× the shortfall</td>
+<td>Your broker's real gold margin (5–20%)</td>
+</tr>
+<tr>
+<td>Max drawdown</td>
+<td>Closed-trade equity peak versus bar lows/highs</td>
+<td>TradingView formula and a standard mark-to-market drawdown</td>
+</tr>
+<tr>
+<td>Sharpe/Sortino</td>
+<td>Monthly, 2% risk-free rate, population SD, no annualisation</td>
+<td>Same, plus annualised and deflated versions</td>
+</tr>
+</tbody>
+</table>
+<p>Several behaviours are not documented at all. These include which path the emulator takes when the open is exactly equidistant from high and low, and whether a trailing stop can ratchet up on the way to the high and then trigger on the way to the low within one bar. They also include whether tick-distance exits are measured from the slippage-adjusted fill, how a per-order commission splits across a reversal, how fractional quantities are rounded, and whether an entry that exceeds available funds at 100% margin is rejected or shrunk. The only way to settle these is to run known scripts on TradingView and compare results. TradingView's own list of pitfalls fills in the rest of the specification. <code>request.security()</code> with <code>lookahead_on</code> and no <code>[1]</code> offset "will return data from the future on historical bars, which is dangerously misleading" (<a href="https://www.tradingview.com/pine-script-docs/concepts/repainting/">TradingView repainting docs</a>). Results "repaint" over time as the plan's bar window slides forward and the first bar moves (<a href="https://www.tradingview.com/pine-script-docs/faq/strategies/#why-did-my-trade-results-change-dramatically-overnight">Strategies FAQ</a>). Deep Backtesting starts calculating at the start of the date range rather than the chart's first bar, so EMA warm-up and therefore trades differ from regular mode (<a href="https://www.tradingview.com/support/solutions/43000666266-why-do-the-data-of-the-regular-mode-and-deep-backtesting-not-match/">Help Center: regular vs Deep mismatch</a>). Regular mode keeps detail only for the latest 9,000 trades (<a href="https://www.tradingview.com/pine-script-docs/concepts/strategies/#trade-limit">Strategies page, Trade limit</a>). The FAQ also asks for "ideally 100 trades or more" (<a href="https://www.tradingview.com/pine-script-docs/faq/strategies/#why-are-no-trades-executed-after-i-add-the-strategy-to-the-chart">Strategies FAQ</a>).</p>
+<h2>The legal line separates TradingView's documentation from its data, code and accounts</h2>
+<p>TradingView's Terms of Use license content and market data "for exclusive display-only use" and prohibit "any form of non-display usage". The examples given include "automated trading, automated order generation, price referencing, order verification", and the ban extends to "any machine-driven processes that do not involve the direct, human-readable display of such data" (§3). The same section bars "translating, decompiling, disassembling or creating derivative works" without written consent from TradingView and the relevant data providers. It also states "we do not permit commercial usage of any of our services or APIs", and it passes on the data providers' bans on sublicensing or selling data. §11 says derived data cannot "be reverse-engineered in any manner". §18 allows immediate account termination, and New York law governs (<a href="https://www.tradingview.com/policies/">Terms of Use</a>). The support site describes enforcement. Users are "strictly prohibited from employing any automated data collection methods, including but not limited to scripts, APIs, screen scraping, data mining, robots", and every feature is "for manual use only". A first violation brings a temporary ban, and repeat violations can bring a permanent one (<a href="https://www.tradingview.com/support/solutions/43000674726-why-is-my-account-banned-due-to-suspicious-activity/">Help Center: account banned for suspicious activity</a>).</p>
+<p>That still leaves a lot open. You can read the Pine manual and Help Center and write your own engine that behaves as they describe. Doing so uses no TradingView code, no decompilation and no TradingView data, and the documentation exists to explain the emulator to users. On that reasoning it falls outside the prohibitions above; this is an inference, not legal advice. Lightweight Charts can be reused with attribution. TradingView's official ways to get data out are manual. "Download chart data…" exports whatever the chart has loaded, including indicator values ("The data you export is what your chart shows you") (<a href="https://www.tradingview.com/support/solutions/43000537255-how-to-export-chart-data/">Help Center: export chart data</a>). The strategy report's Download button exports the List of Trades and the Performance Summary as CSV (<a href="https://www.tradingview.com/support/solutions/43000613680-how-to-export-strategy-data/">Help Center: export strategy data</a>). Pine strategies, alerts and webhooks are features you pay for. The TradingView REST API for Brokers is a specification that brokers implement so TradingView users can trade through them; it is not a data API for individuals (<a href="https://www.tradingview.com/broker-api-docs/">Broker API docs</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Activity</th>
+<th>Status</th>
+<th>Practical risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Re-implementing documented emulator behaviour in your own code</td>
+<td>Uses no TradingView code or data</td>
+<td>Very low (inference)</td>
+</tr>
+<tr>
+<td>Using Lightweight Charts in your app</td>
+<td>Apache-2.0; NOTICE and link required (<a href="https://github.com/tradingview/lightweight-charts">GitHub</a>)</td>
+<td>None if attribution is kept</td>
+</tr>
+<tr>
+<td>Manual chart and strategy-report CSV exports for personal parity checks</td>
+<td>Official, manual feature</td>
+<td>Low; keep them personal and never redistribute</td>
+</tr>
+<tr>
+<td>Pine strategy → alert → webhook → your executor</td>
+<td>Official, paid plan with 2FA</td>
+<td>Low, apart from the §3 "non-display" tension below</td>
+</tr>
+<tr>
+<td>Unofficial websocket pulls (tvDatafeed, TradingView-API)</td>
+<td>Automated collection under §3</td>
+<td>Temporary, then permanent, ban of your account</td>
+</tr>
+<tr>
+<td>Scraping at scale, defeating captchas, feeding TradingView data into automated orders</td>
+<td>Explicit non-display breach</td>
+<td>Permanent ban; possible data-provider claims</td>
+</tr>
+<tr>
+<td>Redistributing TradingView data, or using a leaked Charting Library</td>
+<td>Prohibited; "legal consequences" warned</td>
+<td>Highest</td>
+</tr>
+</tbody>
+</table>
+<p>The open-source clients built on TradingView's private protocol still work but break easily. Mathieu2301/TradingView-API (Node/TypeScript, about 5.7k stars) now ships a backtest API that "rejects look-ahead, fills at the next open" and supports in-sample/out-of-sample splits, but it authenticates with the user's browser session cookies (<a href="https://github.com/Mathieu2301/TradingView-API">Mathieu2301/TradingView-API</a>). The main Python tvDatafeed fork's issue history is dominated by <code>recaptcha_required</code> login failures from December 2024 and a login breakage in v2.2.0 in December 2025 (<a href="https://github.com/rongardF/tvdatafeed/issues">tvdatafeed issues</a>). tradingview-ta has had no release since October 2022 (<a href="https://pypi.org/project/tradingview-ta/">PyPI tradingview-ta</a>). TradersPost, which builds on TradingView's official webhooks, warns that these tools use endpoints that "are not sanctioned, not stable" and that using them "likely violates TradingView's terms of service" (<a href="https://blog.traderspost.io/article/tradingview-api">TradersPost: TradingView API</a>). The research found no lawsuit against an individual scraper; the documented enforcement is account bans. Because these tools log in as you, your paid account is what is at risk.</p>
+<p>Singapore law offers less cover than it might seem to. The Copyright Act 2021 added a computational data analysis exception that allows copying to "identify, extract and analyse information", provided there is "lawful access". Contract terms that try to exclude the exception are void, including foreign-law contracts chosen "wholly or mainly to evade" it (<a href="https://www.twobirds.com/en/insights/2021/singapore/coming-up-in-singapore-new-copyright-exception-for-text-and-data-mining">Bird &amp; Bird</a>). It still does not make scraping TradingView safe. The exception is about copyright, and prices are largely facts. TradingView's real levers are contractual (closing your account) and its data-provider licences, and "lawful access" is doubtful when the access itself breaches the terms. The exact section numbers in the enacted Act were not verified.</p>
+<p>One tension in TradingView's terms needs a clear answer. §3 lists "automated trading" as a prohibited non-display use of TradingView's market data, yet TradingView sells webhook alerts that third-party bridges use to trade automatically. The defensible reading is that TradingView's own features, such as a Pine strategy firing an alert to your server, may drive your orders, while pulling TradingView's data into your own automated engine is what is prohibited. The cleanest design avoids the question: generate signals in your own engine from broker or vendor data, and use TradingView for charting, prototyping and optional alerts only. Data from elsewhere has its own conditions. No explicit redistribution or commercial-use terms were found for Dukascopy, HistData or Yahoo, so treat their data as personal research material. Open-source frameworks matter too if the tool is ever shared. backtesting.py is AGPL-3.0, and vectorbt's Commons Clause forbids selling hosting or consulting services whose value derives "entirely or substantially" from the software (<a href="https://pypi.org/project/backtesting/">PyPI backtesting</a>; <a href="https://github.com/polakowo/vectorbt/blob/master/LICENSE.md">vectorbt LICENSE</a>).</p>
+<h2>Build the gold engine on Dukascopy bid/ask, New York sessions and 2026-sized costs</h2>
+<h3>Free bid/ask history back to 2003 beats any TradingView export</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Coverage</th>
+<th>Prices</th>
+<th>Clock</th>
+<th>Access and limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dukascopy datafeed</td>
+<td>Ticks and M1 from 2003-05-05</td>
+<td><strong>Bid and ask</strong></td>
+<td>UTC</td>
+<td>Free, no account; heavy HTTP 429 throttling (<a href="https://www.dukascopy-node.app/instrument/xauusd">dukascopy-node</a>)</td>
+</tr>
+<tr>
+<td>HistData</td>
+<td>M1, 2009 to Oct 2026</td>
+<td>Bid only</td>
+<td>Fixed EST (UTC−5, no DST)</td>
+<td>Free manual zips (<a href="https://www.histdata.com/f-a-q/data-files-detailed-specification/">HistData spec</a>)</td>
+</tr>
+<tr>
+<td>Yahoo GC=F (yfinance)</td>
+<td>Daily full; 1h 730 days; 2m–90m 60 days; 1m 30 days in 8-day requests</td>
+<td>COMEX futures</td>
+<td>Exchange time</td>
+<td>Free, unofficial (<a href="https://github.com/ranaroussi/yfinance/blob/main/yfinance/scrapers/history.py">yfinance history.py</a>; <a href="https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&amp;range=30d">Yahoo chart API</a>)</td>
+</tr>
+<tr>
+<td>OANDA v20 candles</td>
+<td>Up to 5,000 candles per request, paginated</td>
+<td>Mid, bid, ask</td>
+<td>UTC; daily candles aligned to 17:00 New York</td>
+<td>Free practice-account token (<a href="https://developer.oanda.com/rest-live-v20/instrument-ep">OANDA Instrument Endpoints</a>)</td>
+</tr>
+<tr>
+<td>Massive (formerly Polygon)</td>
+<td>FX minute flat files from 2009-09-25</td>
+<td>Minute OHLCV</td>
+<td>n/a</td>
+<td>$49/month Currencies Starter (<a href="https://massive.com/docs/flat-files/forex/minute-aggregates.md">Massive docs</a>)</td>
+</tr>
+<tr>
+<td>Twelve Data / TraderMade free tiers</td>
+<td>800 credits a day / 2 days of minute history</td>
+<td>n/a</td>
+<td>n/a</td>
+<td>Too limited (<a href="https://support.twelvedata.com/en/articles/5194820-api-credits-limits">Twelve Data</a>; <a href="https://marketdata.tradermade.com/download-forex-data">TraderMade</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>Dukascopy is the backbone of the dataset. Its datafeed serves hourly tick files and daily M1 candle files at predictable URLs (<code>/datafeed/XAUUSD/{YYYY}/{MM}/{DD}/...</code>). The research team decoded live files on 25 October 2026 and confirmed two traps. <strong>Months are zero-indexed</strong> (00 = January). M1 candle rows run open, close, low, high, with gold prices stored as integers to be divided by 1,000 (<a href="https://datafeed.dukascopy.com/datafeed/XAUUSD/2025/00/06/BID_candles_min_1.bi5">Dukascopy datafeed</a>; <a href="https://github.com/ninety47/dukascopy">ninety47/dukascopy</a>). A 113-byte response is a throttling error to retry; a 0-byte file means an hour with no trading (<a href="https://datafeed.dukascopy.com/datafeed/XAUUSD/2026/08/15/21h_ticks.bi5">Dukascopy datafeed</a>). The practical recipe is to download the daily BID and ASK M1 files, which need about 24× fewer requests than hourly ticks, at one or two requests per second. Store them as Parquet in UTC and fetch ticks only for periods where tick precision matters. HistData gives an independent bid-only M1 cross-check, after adding 5 hours all year to convert its fixed EST to UTC. Yahoo's GC=F is a futures sanity check, so expect a positive basis over spot. OANDA's bid/ask candles calibrate the data against a broker that is actually licensed in Singapore. Never splice GC futures and spot XAUUSD into one series. The futures premium is normally around $10–20/oz, but it widened from about $10 to over $60 in early 2025 on tariff fears. CME also added October as a gold active month from January 2026, which changes roll dates for any back-adjusted futures series (<a href="https://www.bullionvault.com/gold-news/gold-price-news/gold-silver-efp-trump-tariffs-011420251">BullionVault</a>; <a href="https://www.cmegroup.com/content/dam/cmegroup/notices/ser/2026/06/ser-9637r.pdf">CME SER-9637R</a>).</p>
+<h3>Sessions and timeframes anchor at 17:00 New York</h3>
+<p>Gold trades roughly from Sunday 18:00 to Friday 17:00 New York time, with a daily halt at 17:00–18:00 ET. The research team found Dukascopy's 21:00 UTC tick file for 15 September 2026 empty. Over two years of Yahoo GC=F hourly bars, the 17:00 ET slot had only 7 bars against about 495 for every other hour (<a href="https://datafeed.dukascopy.com/datafeed/XAUUSD/2026/08/15/21h_ticks.bi5">Dukascopy datafeed</a>; <a href="https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1h">Yahoo chart API</a>). Each source keeps a different clock: Dukascopy UTC, HistData fixed EST with no daylight saving, and OANDA UTC with daily candles aligned to 17:00 America/New_York by default (<a href="https://www.histdata.com/f-a-q/data-files-detailed-specification/">HistData spec</a>; <a href="https://developer.oanda.com/rest-live-v20/instrument-ep">OANDA Instrument Endpoints</a>). The engine should therefore store UTC and label sessions with <code>zoneinfo</code> in America/New_York and Europe/London, because the US and UK change clocks on different dates. It should never forward-fill the daily break or the weekend as flat bars. Building H4 and D1 from M1 with the trading day starting at 17:00 New York matches broker daily candles. TradingView lists OANDA:XAUUSD's timezone as America/New_York, but its exact session string could not be retrieved, so confirm daily-bar boundaries during parity testing. Multi-timeframe logic must copy TradingView's safe <code>request.security</code> pattern, in which a higher-timeframe value becomes visible only once that bar has closed. A simple unit test enforces this: signals computed on data cut off at time t must equal signals computed on the full dataset for every time up to t. For a trader in Singapore, the daily break falls at 05:00–06:00 SGT during the US summer and 06:00–07:00 in winter.</p>
+<h3>A $0.30 spread meets a $72 daily range</h3>
+<p>Dukascopy's own XAUUSD spread, measured from tick files, had a <strong>median of $0.51–0.58 in liquid hours</strong> in 2025–2026. It rose to $0.71 in the hour before the daily break and $0.82 in the hour after the reopen, with spikes near $6 (<a href="https://datafeed.dukascopy.com/datafeed/XAUUSD/2026/08/15/13h_ticks.bi5">Dukascopy datafeed</a>; <a href="https://datafeed.dukascopy.com/datafeed/XAUUSD/2026/08/15/22h_ticks.bi5">Dukascopy reopen hour</a>). Retail brokers advertise much tighter "from" prices. Pepperstone Razor quotes from 0.08 plus $3.50 per lot per side (<a href="https://pepperstone.com/en-au/go/trade-gold-on-razor">Pepperstone Razor gold</a>). IC Markets Raw charges $7 per standard lot round turn (<a href="https://www.icmarkets.com/client-area/faq/?camp=2677">IC Markets help centre</a>). The MAS-regulated IG Singapore quotes spot gold from 0.3 points with the cost built into the spread (<a href="https://www.ig.com/sg/commodities/gold-trading">IG SG gold trading</a>). A Singapore comparison table lists CMC at 0.3 and Saxo at 0.6 (<a href="https://blog.moneysmart.sg/invest/cfd-trading-singapore">MoneySmart</a>). A 100-oz lot is standard for CFDs (<a href="https://www.robomarkets.de/en/market-trading/trading/specifications/card/pro-stan/XAUUSD">RoboMarkets XAUUSD spec</a>). Micro gold futures are 10 oz, and their $0.10 tick is worth $1 (<a href="https://cmegroup.com/markets/metals/precious/e-micro-gold.contractSpecs.options.html">CME Micro Gold specs</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Cost model (per oz, round trip)</th>
+<th>Spread assumption</th>
+<th>Commission</th>
+<th>Total</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raw/ECN account</td>
+<td>$0.15 London/NY, $0.25 Asia</td>
+<td>$0.07 ($7 per 100-oz lot)</td>
+<td>~$0.22–0.32</td>
+<td>Calibrating to a raw-spread broker</td>
+</tr>
+<tr>
+<td>Standard or MAS-broker account</td>
+<td>$0.30–0.40</td>
+<td>None</td>
+<td>~$0.30–0.40</td>
+<td>IG/CMC/Saxo-style pricing</td>
+</tr>
+<tr>
+<td>Conservative</td>
+<td>Dukascopy's actual bid/ask (~$0.55 median)</td>
+<td>None</td>
+<td>~$0.55</td>
+<td>Default for research runs</td>
+</tr>
+<tr>
+<td>Time-of-day multipliers</td>
+<td>1.5× for the 30 min before 17:00 ET and 60 min after 18:00 ET; 3–5× or no trading within minutes of NFP/CPI/FOMC</td>
+<td>—</td>
+<td>—</td>
+<td>All runs</td>
+</tr>
+</tbody>
+</table>
+<p>The multipliers are engineering defaults built from the measured spreads and from educational sources saying spreads "can jump 3–10 times" around the daily rollover (<a href="https://dev.to/xauusdrobot/the-xauusd-spread-the-hidden-cost-that-quietly-decides-your-trading-results-574d">dev.to: XAUUSD spread</a>); they are not broker execution statistics. Overnight financing matters more than most retail backtests allow. Of 32 broker accounts surveyed, all but one charged on gold longs (<a href="https://www.financemagnates.com/forex/analysis/the-battle-for-gold-traders-moves-overnight-32-accounts-charge-one-offers-positive-swaps/">Finance Magnates: gold swaps</a>). A 2026 estimate puts one long lot at about <strong>$30–45 per night</strong>, with a triple charge on Wednesday at many brokers (<a href="https://fxnx.com/en/blog/xauusd-swap-rates-table-nightly-long-short-cost-per-lot">FXNX: XAUUSD swap rates</a>). A first-principles check agrees. At about $4,000/oz, one lot is roughly $400,000 notional, so each 1% a year of financing costs about $11 a night. A swing trade held five nights can therefore pay $150–250 in swap, several times its spread and commission.</p>
+<p>The volatility regime matters as much as costs. The research team measured daily true range from Yahoo GC=F daily bars (<a href="https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d">Yahoo chart API</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Period</th>
+<th>Mean daily true range</th>
+<th>As % of price</th>
+<th>Average close</th>
+<th>Largest day</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2023-H2</td>
+<td>$22.8</td>
+<td>1.15%</td>
+<td>$1,967</td>
+<td>$114</td>
+</tr>
+<tr>
+<td>2024-H2</td>
+<td>$37.6</td>
+<td>1.46%</td>
+<td>$2,587</td>
+<td>$107</td>
+</tr>
+<tr>
+<td>2025-H1</td>
+<td>$60.3</td>
+<td>1.92%</td>
+<td>$3,088</td>
+<td>$149</td>
+</tr>
+<tr>
+<td>2025-H2</td>
+<td>$72.5</td>
+<td>1.86%</td>
+<td>$3,827</td>
+<td>$301</td>
+</tr>
+<tr>
+<td><strong>2026-H1</strong></td>
+<td><strong>$151.6</strong></td>
+<td><strong>3.22%</strong></td>
+<td><strong>$4,703</strong></td>
+<td><strong>$780</strong></td>
+</tr>
+<tr>
+<td>2026-H2 (to 23 Oct)</td>
+<td>$94.7</td>
+<td>2.21%</td>
+<td>$4,269</td>
+<td>$207</td>
+</tr>
+</tbody>
+</table>
+<p>On 23 October 2026, ATR(14) was about <strong>$72</strong> and ATR(60) about $95, with GC at $4,007.9. That is well below the record close of $5,318 on 29 January 2026 (<a href="https://www.thetrading.tools/gold-price">thetrading.tools</a>). Within the day, the busiest hours are 08:00–11:00 New York, which is about <strong>20:00–23:00 SGT</strong> during the US summer. The 09:00 ET hour averaged a $27.3 range (0.70%) against $11.9 (0.30%) at 16:00 ET. A secondary bump of about 0.50–0.54% per hour comes around 08:00–10:00 SGT (<a href="https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1h">Yahoo chart API</a>). Two design rules follow. First, stops, targets and slippage must scale with ATR or percentage of price, because a $10 stop tuned on 2023 is noise in 2026. Second, costs that look trivial against a 2026 hourly range of $15–27 were about five times larger in relative terms in 2023. A scalper that only works in 2026 is a bet on the volatility regime, not an edge.</p>
+<h3>Prove parity against TradingView's exports, then scale beyond them</h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Licence</th>
+<th>Latest release</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>backtesting.py</td>
+<td>AGPL-3.0</td>
+<td>0.6.6 (Jul 2026)</td>
+<td>Closest bar-backtester analogue; next-open fills by default; heatmaps (<a href="https://pypi.org/project/backtesting/">PyPI</a>; <a href="https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html">API</a>)</td>
+</tr>
+<tr>
+<td>vectorbt</td>
+<td>Apache-2.0 + Commons Clause</td>
+<td>1.2.0 (Oct 2026)</td>
+<td>Fast vectorised sweeps for PBO matrices; signals must be shifted to avoid same-bar fills (<a href="https://pypi.org/project/vectorbt/">PyPI</a>; <a href="https://vectorbt.dev/api/portfolio/base/">Portfolio API</a>)</td>
+</tr>
+<tr>
+<td>NautilusTrader</td>
+<td>LGPL-3.0</td>
+<td>2.0.0rc7 (Oct 2026)</td>
+<td>Event-driven core with the same code in backtest and live (<a href="https://pypi.org/project/nautilus-trader/">PyPI</a>)</td>
+</tr>
+<tr>
+<td>backtrader</td>
+<td>GPLv3</td>
+<td>1.9.78.123 (Apr 2023)</td>
+<td>Effectively unmaintained (<a href="https://pypi.org/project/backtrader/">PyPI</a>)</td>
+</tr>
+<tr>
+<td>zipline-reloaded / LEAN</td>
+<td>Apache-2.0</td>
+<td>3.2.0 / CLI 1.0.230 (Oct 2026)</td>
+<td>Active, but equity- and portfolio-oriented (<a href="https://pypi.org/project/zipline-reloaded/">PyPI</a>; <a href="https://github.com/QuantConnect/Lean/blob/master/LICENSE">LEAN licence</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>None of the off-the-shelf frameworks reproduces TradingView's intrabar path, gap rule, tick-based slippage and closed-trade drawdown together, and the two closest carry AGPL or Commons Clause obligations. A small purpose-built engine that borrows their ideas is the better fit: backtesting.py's optimisation heatmaps, vectorbt-style vectorised sweeps for research, and NautilusTrader's event-driven parity between backtest and live. Build parity in a fixed order. Prototype the strategy in Pine on the same feed you will trade, for example OANDA:XAUUSD if the broker is OANDA. Export both the chart data, with the strategy's plotted indicators, and the List of Trades CSV for a few windows. Run the exported bars through the engine with identical settings: initial capital, sizing, commission type, slippage ticks, margin, pyramiding and bar detail. Then match trades one to one. Mismatches usually come from the bar-timestamp convention, the session template, cost settings or the intrabar path, and resolving them also settles the undocumented behaviours listed earlier. Once parity holds, move the same engine onto Dukascopy history and add what TradingView cannot do: bid/ask fills, magnification on every bar, a pessimistic stop-first mode and swap accounting.</p>
+<h2>A backtest earns trust only after you count every trial</h2>
+<h3>Published thresholds: DSR 0.95, PBO 0.05 and 45 configurations per five years</h3>
+<p>The peer-reviewed literature is consistent that <strong>the number of variants tried is the key input for judging any backtest</strong>. The Deflated Sharpe Ratio of Bailey and López de Prado tests the chosen strategy's Sharpe against the <em>expected maximum</em> Sharpe of N unskilled trials. It uses the variance of the trials' Sharpe ratios, the sample length, and the skewness and kurtosis of returns. In the paper's example, a five-year daily backtest with an annualised Sharpe of 2.5 and fat-tailed, negatively skewed returns had only "a 90% chance that the true SR … is greater than zero". Had only 46 independent trials been run, DSR "would have been 0.9505", above the 95% bar (<a href="https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf">DSR paper</a>; <a href="https://papers.ssrn.com/abstract=2460551">SSRN</a>). The companion Minimum Backtest Length result is starker: "If only 5 years of data are available, no more than 45 independent model configurations should be tried", or an in-sample Sharpe of 1 with an expected out-of-sample Sharpe of zero is almost guaranteed (<a href="https://carmamaths.org/jon/backtest.pdf">Bailey et al., Notices of the AMS</a>). Harvey and Liu, summarising López de Prado, note that "only seven trials are needed to obtain a spurious two-year backtest" with an in-sample Sharpe above 1.0 (<a href="https://people.duke.edu/~charvey/Research/Published_Papers/P120_Backtesting.PDF">Harvey &amp; Liu 2015</a>). The Probability of Backtest Overfitting splits the return matrix (one column per configuration) into S = 16 blocks. For every combination of half the blocks, it checks how often the in-sample winner falls below the out-of-sample median, and it rejects models with PBO above 0.05. The paper's examples range from 74% for an overfit strategy to 0.04% for a genuine one (<a href="https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf">PBO paper</a>). Harvey and Liu's multiple-testing haircut is non-linear. With 200 tests, an annual Sharpe of 0.75 over 20 years falls to 0.32, a haircut of about 60%. Haircuts are "almost always more than" 50% for Sharpe ratios below 0.4 and at most 25% above 1.0 (<a href="https://people.duke.edu/~charvey/Research/Published_Papers/P120_Backtesting.PDF">Harvey &amp; Liu 2015</a>).</p>
+<p>These tools only work if the journal keeps the right data. DSR needs the variance across trials; quantstrat's implementation takes <code>nTrials</code> and <code>varTrials</code> as inputs (<a href="https://www.rdocumentation.org/packages/quantstrat/versions/0.16.7/topics/deflatedSharpe">quantstrat deflatedSharpe</a>). PBO needs each trial's full return series, and the effective number of independent trials needs the correlations between trials, since correlated trials overstate N (<a href="https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf">DSR paper</a>). Every run must therefore be logged with its parameter hash, data range, timeframe, per-period returns, Sharpe, skew and kurtosis. N counts cumulatively per hypothesis family, deleting a variant must not reset it, and manual "eyeballing" runs count too. The DSR paper's advice on when to stop applies directly: "Investment theory, not computational power, should motivate what experiments are worth conducting."</p>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Pass condition</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trial ledger</td>
+<td>Every run logged; N cumulative per family</td>
+<td>Required by DSR/PBO (peer-reviewed)</td>
+</tr>
+<tr>
+<td>Deflated Sharpe</td>
+<td>≥ 0.95</td>
+<td>Peer-reviewed</td>
+</tr>
+<tr>
+<td>PBO (CSCV, S = 16)</td>
+<td>≤ 0.05</td>
+<td>Peer-reviewed</td>
+</tr>
+<tr>
+<td>Configurations tried</td>
+<td>≤ ~45 independent on 5 years of data</td>
+<td>Peer-reviewed (MinBTL)</td>
+</tr>
+<tr>
+<td>Walk-forward efficiency</td>
+<td>OOS/IS annualised return ≥ 0.5</td>
+<td>Practitioner, second-hand from Pardo (<a href="https://quantammsim.readthedocs.io/en/latest/tutorials/walk_forward_analysis.html">quantammsim</a>)</td>
+</tr>
+<tr>
+<td>Trade count</td>
+<td>≥ 100 as a floor; ~400 for t = 2 when per-trade mean/SD = 0.1</td>
+<td>TradingView FAQ plus arithmetic</td>
+</tr>
+<tr>
+<td>Final holdout</td>
+<td>Most recent 20–30%, used once</td>
+<td>Heuristic</td>
+</tr>
+<tr>
+<td>Monte Carlo</td>
+<td>Size risk from the 95th-percentile drawdown; 5th-percentile terminal equity above start</td>
+<td>Heuristic</td>
+</tr>
+<tr>
+<td>Parameter plateau</td>
+<td>Neighbourhood median ≥ ~70% of the peak; no negative neighbours</td>
+<td>Heuristic</td>
+</tr>
+<tr>
+<td>Intrabar ordering</td>
+<td>Same verdict under TradingView-default, M1-magnified and stop-first modes</td>
+<td>Engineering</td>
+</tr>
+<tr>
+<td>Cost stress</td>
+<td>Still profitable at 1.5× and 2× costs</td>
+<td>Engineering</td>
+</tr>
+<tr>
+<td>Regime split</td>
+<td>Positive in 2023–24, 2025, 2026-H1 and 2026-H2 separately</td>
+<td>Engineering</td>
+</tr>
+</tbody>
+</table>
+<p>The trade-count line follows from t ≈ (μ/σ)·√n for per-trade returns. A typical retail intraday edge with mean/SD of 0.1 needs about 400 trades to reach t = 2, and about 900 for the t = 3 that Harvey–Liu logic demands once many variants have been tried. TradingView's "ideally 100 trades" is a sanity floor, not proof. Purged and embargoed cross-validation and its combinatorial variant (CPCV) extend single-path walk-forward into a distribution of out-of-sample Sharpe ratios (<a href="https://en.wikipedia.org/wiki/Purged_cross-validation">Purged cross-validation</a>). Block bootstrapping the trade sequence keeps gold's volatility clustering intact.</p>
+<h3>Gold-specific stress tests catch what generic statistics miss</h3>
+<p>Three tests matter most for XAUUSD. The first is intrabar sensitivity. Tight-stop M1–M15 scalps often have both stop and target inside a single bar, so run every strategy under TradingView's default path, under M1 magnification and under a pessimistic stop-first rule. A verdict that flips between modes means the edge lives in an assumption. The second is cost stress, because gold's documented gross edges have repeatedly vanished net of costs. Gold intraday-seasonality strategies reached "Sharpe ratios as high as 1.61" before costs but underperformed the market after them (<a href="https://research-api.cbs.dk/ws/portalfiles/portal/59803241/651553_Thesis_Contract_13383.pdf">Donati &amp; Jung, CBS thesis</a>). An opening-range-breakout replication on index CFDs reproduced the gross result (+0.131R on NQ), yet after spread and slippage "no market is distinguishable from zero, four of five are negative" (<a href="https://www.mql5.com/en/blogs/post/776235">MQL5 ORB replication</a>). The third is feed and parameter robustness. An Asian-range gold breakout gave somewhat different results on two brokers' tick data (<a href="https://www.mql5.com/en/blogs/post/777540">MQL5 London breakout on gold</a>). In the clearest gold data-mining warning, Urquhart and co-authors tested <strong>66,297 moving-average rules</strong> on 5-minute spot gold. Standard literature parameters produced "significant negative payoffs", and of the in-sample winners only the SMA rule for gold stayed significantly profitable out of sample (<a href="https://c.mql5.com/forextsd/forum/174/does_technical_analysis_beat_the_market__evidence_from_high_frequency_trading_in_gold_and_silver.pdf">Urquhart et al.</a>).</p>
+<h3>The evidence on gold strategies is thin outside slow trend-following</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Strategy family</th>
+<th>Best evidence</th>
+<th>Caveat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Time-series momentum, daily to monthly</td>
+<td>Peer-reviewed: significant in all 58 futures, gold included (<a href="https://pages.stern.nyu.edu/~lpederse/papers/TimeSeriesMomentum.pdf">Moskowitz, Ooi &amp; Pedersen</a>); century-long 1/3/12-month trend portfolios (<a href="https://fairmodel.econ.yale.edu/ec439/hurst.pdf">Hurst, Ooi &amp; Pedersen</a>)</td>
+<td>Diversified portfolio Sharpe of about 0.4 after fees (<a href="https://www.cxoadvisory.com/momentum-investing/trend-following-with-intrinsic-momentum-over-the-very-long-run">CXO</a>); a gold-only system will be weaker</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Session / overnight effect</td>
+<td>Peer-reviewed: COMEX overnight positive, daytime negative, 1985–2012 (<a href="https://ideas.repec.org/a/taf/apeclt/v21y2014i18p1269-1272.html">Blose &amp; Gondhalekar</a>); H1 2026 Asia +12.97%, US −15.08% (<a href="https://www.caixinglobal.com/2026-07-03/analysis-gold-caught-in-a-tug-of-war-between-asian-bulls-and-a-hawkish-fed-102460438.html">Caixin</a>)</td>
+<td>Weakening over time; costs absorb it</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Intraday MA crossovers</td>
+<td>One SMA family survived out of sample among 66,297 rules</td>
+<td>Severe data-mining risk</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Opening-range breakout</td>
+<td>Equity evidence only</td>
+<td>Net-zero replications; nothing gold-specific (<a href="https://quantifiedstrategies.substack.com/p/opening-range-breakout-trading-strategies">Quantified Strategies</a>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Asian-range / London-open breakout</td>
+<td>One self-published blog (PF ≈ 1.38)</td>
+<td>Folklore</td>
+</tr>
+<tr>
+<td>6</td>
+<td>RSI/Bollinger mean reversion</td>
+<td>No gold-specific study found</td>
+<td>Folklore</td>
+</tr>
+</tbody>
+</table>
+<p>The pattern points one way: gold's documented edges sit at <strong>slow horizons</strong> or in <strong>session drift that costs consume</strong>. The old London PM fix leak, in which early trades predicted the fix direction "in some cases exceeding 90%", is a historical curiosity, because the fix was replaced by the ICE-run LBMA Gold Price in 2015 (<a href="https://ideas.repec.org/a/wly/jfutmk/v34y2014i11p1003-1039.html">Caminschi &amp; Heaney</a>; <a href="https://www.lbma.org.uk/prices-and-data/lbma-gold-price/lbma-gold-price">LBMA Gold Price</a>). The journal should show each template's evidence tier so that "popular" is never mistaken for "proven".</p>
+<h3>Position sizing collides with 2026 volatility on small accounts</h3>
+<p>The sizing formula is standard: lots = (equity × risk%) ÷ (stop distance in $ × ounces per lot), with 100 oz per standard lot (<a href="https://fr.tradingview.com/chart/XAUUSD/j8BFjYVq-How-to-Calculate-Lot-Size-for-Trading-XAUUSD-on-TradingView">TradingView idea: XAUUSD lot size</a>). At $10,000 equity, 1% risk and a $12 stop, that gives 0.083, rounded down to 0.08 lots. Use dollar distances rather than "pips", because brokers define gold pips differently. The 2026 regime creates a trap here. A daily trend system with a 2×ATR stop risks about $144 per ounce at today's $72 ATR. At a 0.01-lot (1-oz) minimum, the <em>smallest</em> possible position already risks 1.44% of a $10,000 account. Small accounts therefore face a choice: trade lower timeframes, use a broker with finer unit sizes, accept more risk, or skip trades. Institutional trend-followers size by volatility and target a constant ex-ante risk, 10% a year at portfolio level in the AQR research (<a href="https://fairmodel.econ.yale.edu/ec439/hurst.pdf">Hurst, Ooi &amp; Pedersen</a>). For retail templates, sensible engineering defaults are 0.5% risk per trade (1% at most), a daily loss limit of 2–3R, and a kill switch triggered when live drawdown exceeds the Monte Carlo 95th percentile. Harvey and Liu's warning that "Sharpe ratios do not necessarily control for risk" applies to negatively skewed setups with tight targets and wide stops, which are common in gold scalping and are why DSR's skew and kurtosis terms matter (<a href="https://people.duke.edu/~charvey/Research/Published_Papers/P120_Backtesting.PDF">Harvey &amp; Liu 2015</a>).</p>
+<h2>Automate through your own engine, with TradingView as one optional signal</h2>
+<h3>Webhooks are fire-and-forget: three seconds, four IPs, no documented retries</h3>
+<p>TradingView webhooks need <strong>2-factor authentication</strong> on the account. Each alert sends an HTTP POST, typed <code>application/json</code> when the message is valid JSON and plain text otherwise, and only to <strong>port 80 or 443</strong>. A receiver that takes longer than <strong>three seconds</strong> has the request cancelled. Requests come from four published IPv4 addresses (52.89.214.238, 34.212.75.30, 54.218.53.128, 52.32.178.7), and IPv6 is not supported. The help page describes no retries; failures appear only in the alert log. It also advises against putting credentials in the body (<a href="https://www.tradingview.com/support/solutions/43000529348-about-webhooks/">TradingView: About webhooks</a>). An alert that fires <strong>more than 15 times in 3 minutes is stopped automatically</strong>, which a strategy flipping on a fast chart can hit in one busy minute (<a href="https://th.tradingview.com/support/solutions/43000690939/">TradingView: alert triggered too often</a>; <a href="https://crosstrade.io/blog/tradingview-webhook-not-working">CrossTrade</a>). Strategy placeholders let one alert carry every order: <code>{{strategy.order.action}}</code>, <code>{{strategy.order.contracts}}</code>, <code>{{strategy.position_size}}</code>, <code>{{strategy.market_position}}</code>, <code>{{strategy.order.id}}</code>, <code>{{strategy.order.alert_message}}</code>, plus <code>{{time}}</code> for bar time and <code>{{timenow}}</code> for fire time (<a href="https://www.tradingview.com/support/solutions/43000531021-how-to-use-a-variable-value-in-alert/">TradingView: variable values in alerts</a>). On annual billing, plans cost the monthly equivalent of $12.95 (Essential), $29.95 (Plus), $59.95 (Premium) and $199.95 (Ultimate) (<a href="https://www.tradingview.com/pricing/">TradingView pricing</a>). A third party says every paid plan supports webhooks (<a href="https://crosstrade.io/blog/tradingview-plan-for-webhook-alerts">CrossTrade</a>). Alert expiry is disputed. CrossTrade says Essential and Plus alerts expire after two months, and TradingView's help lists open-ended alerts for Premium (in one version also Expert) and Ultimate. Even open-ended alerts can be switched off automatically after a year without triggering or editing (<a href="https://www.tradingview.com:443/support/solutions/43000688759-i-upgraded-to-the-premium-plan-but-my-alerts-still-expiring-in-2-months/">TradingView: alerts still expiring</a>). Premium also unlocks Deep Backtesting, high bar detail and history-tick calculation, which makes it the practical tier for this workflow. Check the live pricing page before subscribing.</p>
+<p>These mechanics shape the receiver. It should validate, write to a durable queue and return 200 immediately, then call the broker asynchronously. It should accept requests only from the four IPs over TLS, check a rotating per-strategy secret that cannot trade on its own, enforce a strict JSON schema, and reject messages whose <code>timenow</code> is stale. Because delivery is not guaranteed, alerts should carry the <strong>target position</strong> (<code>{{strategy.position_size}}</code>) rather than only the change. A lost target message corrects itself on the next one; a lost delta does not. The engine should also reconcile against the broker's actual position on a timer. Bridges add convenience but also another failure point. PineConnector costs $59, $129 or $199 a month (Core, Plus, Pro, with launch prices rising), is MT5-only, and offers hosted MT5 "Edge" instances in Virginia. Its "&lt;1s typical" latency excludes webhook delivery and broker execution (<a href="https://www.pineconnector.com/pages/pricing">PineConnector pricing</a>). TradersPost lists stocks, options, futures and crypto but not forex, so it fits only gold futures (<a href="https://traderspost.io/pricing">TradersPost pricing</a>). 3Commas is built for crypto exchanges (<a href="https://www.capterra.com/p/10030799/3Commas/">Capterra</a>). A bridge makes sense only for a trader who wants MT5 execution without writing code.</p>
+<h3>Broker choice in Singapore: OANDA leads for Python, pending two checks</h3>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Singapore status</th>
+<th>Python fit</th>
+<th>Gold instrument</th>
+<th>Open questions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OANDA v20 REST</strong></td>
+<td>OANDA Asia Pacific Pte Ltd, described as MAS-licensed; SG site lists the OANDA API (<a href="https://www.compareforexbrokers.com/sg/mt5/">CompareForexBrokers</a>; <a href="https://www.oanda.com/sg-en/skills-and-insights/guides/">OANDA SG</a>)</td>
+<td>Linux-friendly REST and streaming; free practice host; 120 requests/s per IP (<a href="https://developer.oanda.com/rest-live-v20/development-guide/">Development Guide</a>)</td>
+<td>Spot CFD, expected as <code>XAU_USD</code></td>
+<td>Confirm v20 access for SG accounts and the instrument name; reportedly no negative-balance protection (<a href="https://www.compareforexbrokers.com/sg/oanda-review/">OANDA review</a>)</td>
+</tr>
+<tr>
+<td>MT5 via <code>MetaTrader5</code></td>
+<td>Many MAS-licensed brokers</td>
+<td>Windows-only wheels (5.0.6231, Sep 2026); a terminal must stay running (<a href="https://pypi.org/project/MetaTrader5/">PyPI</a>)</td>
+<td>Broker's XAUUSD CFD</td>
+<td>Needs a Windows VPS</td>
+</tr>
+<tr>
+<td>Interactive Brokers (ib_async)</td>
+<td>IB Singapore</td>
+<td>TWS or IB Gateway must run; <code>ib_async</code> succeeds ib_insync (<a href="https://pypi.org/project/ib_async">PyPI ib_async</a>)</td>
+<td>XAUUSD as <code>CMDTY</code> reportedly unavailable to IB Singapore clients; GC/MGC futures instead (<a href="https://www.interactivebrokers.eu/campus/trading-lessons/trading-spot-gold-and-silver-using-ibkrs-tws/">IBKR Campus</a>)</td>
+<td>Roll logic changes the backtest</td>
+</tr>
+<tr>
+<td>Saxo OpenAPI</td>
+<td>Saxo Capital Markets Pte Ltd, MAS-regulated; demo environment (<a href="https://www.home.saxo/en-sg/platforms/api">Saxo SG API</a>)</td>
+<td>REST</td>
+<td>Spot gold, CFDs, futures</td>
+<td>Retail API eligibility unconfirmed</td>
+</tr>
+<tr>
+<td>IG Singapore</td>
+<td>IG Asia Pte Ltd, CMS licence</td>
+<td>REST API not researched</td>
+<td>100-oz spot gold, <strong>20% retail margin</strong> (<a href="https://www.ig.com/sg/commodities/gold-trading">IG SG gold</a>)</td>
+<td>API details unverified</td>
+</tr>
+<tr>
+<td>cTrader Open API</td>
+<td>Depends on broker</td>
+<td>Official OpenApiPy library (<a href="https://help.ctrader.com/open-api/">cTrader docs</a>)</td>
+<td>Broker-specific</td>
+<td>No MAS-licensed cTrader broker identified</td>
+</tr>
+</tbody>
+</table>
+<p>OANDA fits best because one Python codebase can run backtest, paper and live trading. The practice and live APIs differ only in host and token (<code>api-fxpractice.oanda.com</code> versus <code>api-fxtrade.oanda.com</code>). Orders accept <code>stopLossOnFill</code> and a client-assigned <code>clientExtensions.id</code>, which can be looked up at <code>/orders/@&lt;id&gt;</code>, giving safe deduplication after a timeout (<a href="https://developer.oanda.com/rest-live-v20/order-ep/">OANDA Order endpoints</a>; <a href="https://developer.oanda.com/rest-live-v20/development-guide/">Development Guide</a>). OANDA is also a supported broker inside TradingView's trading panel (<a href="https://www.financemagnates.com/forex/technology/tradingview-integrates-oandas-api-expanded-deal/">Finance Magnates</a>), so the chart and the execution venue can share a feed. MT5 offers the widest broker choice. Its <code>order_send</code> exposes <code>magic</code> for tagging the bot's orders, <code>deviation</code> as a slippage cap, <code>order_check</code> for pre-validation and retcode 10009 for success, but it ties the bot to Windows (<a href="https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py">MQL5 order_send</a>). The IBKR restriction rests on a search snippet, because the page itself returned 403. Confirm it under trading permissions before ruling IBKR out for spot gold.</p>
+<h3>MAS rules: an FX margin floor, broker-set gold margin and a mandatory knowledge test</h3>
+<p>MAS adopted a <strong>5% minimum margin (20:1)</strong> for retail FX CFDs and leveraged FX in its 2014 response to consultation. It decided not to extend those requirements to all other unlisted margined derivatives, and it set S$5 million base capital for dealers serving retail clients (<a href="https://www.mas.gov.sg/-/media/MAS/News-and-Publications/Consultation-Papers/Response-to-Feedback-on-Proposed-Regulatory-Requirements-for-Unlisted-Margined-Derivatives-Offered-to-Retail-Investors.pdf">MAS response to feedback</a>). Trade press dates the 20:1 retail FX cap from 8 October 2019 (<a href="https://www.financemagnates.com/forex/regulation/fx-leverage-cut-to-201-in-singapore/">Finance Magnates</a>). For gold, sources conflict. IG Singapore charges <strong>20% margin (5:1)</strong> on spot gold, while guides list 10:1 or 20:1 (<a href="https://www.ig.com/sg/commodities/gold-trading">IG SG gold</a>; <a href="https://capitalmarkets.sg/guides/best-leverage-forex-singapore">CapitalMarkets.SG</a>; <a href="https://goodmoneyguide.com/sg/best-gold-trading-platforms-in-singapore/">GoodMoneyGuide SG</a>). The difference is large. At $4,000/oz, a 100-oz lot needs about $80,000 of margin at 5:1 but $20,000 at 20:1, so the backtest's margin model must use the chosen broker's actual figure. Brokers can also change metals margin abruptly; OANDA's Japanese entity raised silver margin from 5% to 20% effective 2 February 2026 (<a href="https://tradersunion.com/news/brokers-news/show/1346613-oanda-japan-raises-margin/">Traders Union</a>). CFDs and leveraged FX are unlisted Specified Investment Products, so MAS Notice SFA 04-N12 requires a <strong>Customer Knowledge Assessment</strong> before a retail client can trade them (<a href="https://www.mas.gov.sg/regulation/notices/notice-sfa-04-n12">MAS Notice SFA 04-N12</a>). Typical routes to pass include six or more CFD or leveraged-FX trades in three years, relevant qualifications, relevant work experience, or a short e-learning module (<a href="https://cityindex.com/en-sg/customer-knowledge-assessment">City Index SG CKA</a>). The research found no MAS rule against a retail client automating trades on their own account. Offshore brokers offering 1:100+ leverage give up MAS protections, and bridge or VPS vendors are not regulated brokers at all.</p>
+<h3>Safety controls borrowed from the futures industry</h3>
+<p>FIA's 2024 best practices for automated trading list pre-trade limits (maximum order size, maximum intraday position, price tolerance), cancel-on-disconnect and kill switches, alongside post-trade analysis and conformance testing (<a href="https://fia.org/sites/default/files/2024-07/FIA_WP_AUTOMATED%20TRADING%20RISK%20CONTROLS_FINAL_0.pdf">FIA 2024</a>). A kill switch should disable trading and cancel resting orders (<a href="https://www.fia.org/sites/default/files/2019-05/Order-Handling-for-Executing-Brokers.pdf">FIA order handling</a>). A retail bot can copy all of this. Every order, whatever its source, passes through one risk gate that enforces maximum order size and net position, orders per minute, price tolerance against the latest broker quote, a spread ceiling, a margin-usage cap, allowed sessions and a ±15–30-minute blackout around NFP, CPI and FOMC. Daily and weekly loss limits are measured on equity including unrealised P&amp;L. Every entry carries a protective stop held at the broker (<code>stopLossOnFill</code>, MT5 <code>sl</code> or an IB bracket), which is the retail substitute for exchange cancel-on-disconnect: if the bot dies, the position stays protected. Order IDs are deterministic, built from strategy, symbol, bar time and signal, and stored in SQLite before sending. After a timeout the bot looks the order up before resending. On every reconnect it reconciles against broker positions and recomputes the target, rather than replaying missed signals. Logs are append-only JSON stamped with the code's git SHA.</p>
+<p>The architecture that ties this together keeps strategies as pure functions that turn a bar and state into a target position, imported unchanged by both the backtester and the live runner. A <code>Broker</code> interface has a <code>PaperBroker</code> (the same simulated fills the backtest uses) and adapters for OANDA, MT5 and IBKR. A TradingView webhook source sits beside the internal signal source and feeds the same risk gate, so a Pine alert can never bypass it. Rollout runs through five stages: backtest, walk-forward, paper trading on live data, the OANDA practice account, and then live trading at minimum size. Scale up only once forward results match the backtest within tolerance; a rule of thumb, not a sourced standard, is at least 4–8 weeks and 30+ trades. Hosting is cheap. A small Linux VPS runs an OANDA or IBKR bot. MT5 needs Windows, with MetaQuotes' built-in VPS at about $10–15 a month (free at IG for clients holding $1,000 or more) and third-party Windows VPS plans from about $16.67 a month (<a href="https://newyorkcityservers.com/blog/mql5-vps-vs-windows-vps">NYC Servers</a>; <a href="https://www.ig.com/en/help-and-support/platforms/mt5/how-to-access-vps-on-mt5">IG VPS help</a>). Latency of a few hundred milliseconds is irrelevant for H1 and slower strategies; for M1 scalping, measure fill slippage in forward tests before trusting any backtest.</p>
+<h2>Conclusion</h2>
+<p>TradingView's defensible asset is its data licensing and its user accounts, not its simulator. The simulator's specification is public, so an independent engine can match it and then be stricter: magnification on every bar back to 2003, bid/ask fills, a pessimistic ordering mode, swap accounting and deflated statistics. Parity with TradingView is a correctness test, not a ceiling. TradingView remains valuable as a prototyping surface and a golden reference, but it is a poor data source, and as a production signal path it is fragile, with a 3-second timeout, no retries and alert expiry that depends on plan. The largest risk to a retail gold backtest is no longer lookahead code, which a truncation test catches, but the combination of uncounted trials, intrabar ordering assumptions and cost models tuned to the wrong volatility regime.</p>
+<p>Choosing the broker is the first research decision, not the last. The broker sets the feed (a $0.001 or $0.01 tick), the spread and commission, swap, margin (5:1 at IG against 20:1 in some guides), minimum position size and even the operating system the bot runs on. Each of these changes what the backtest says, and at 2026 volatility the minimum lot alone can rule out daily trend systems on small accounts. A free OANDA practice account makes a sensible provisional choice for calibrating costs and running forward tests. Several items must be confirmed before going live: v20 API access for Singapore accounts, which plans include webhooks and open-ended alerts, IBKR Singapore's spot-gold restriction, and the current MAS text, if any, on retail gold CFD margin.</p></article><footer><span>Not financial or legal advice.</span></footer></div></body></html>

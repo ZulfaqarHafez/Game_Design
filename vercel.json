@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'no install step'",
+  "buildCommand": "sh gold-backtester/scripts/vercel_build.sh",
+  "outputDirectory": "gold-backtester/public"
+}

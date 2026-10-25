@@ -179,6 +179,14 @@ Brokers:
 Suggested path: backtest → validate → paper trade 4–8 weeks and compare with the backtest →
 OANDA practice → smallest live size.
 
+## Website
+
+`python -m goldlab site --out public` builds a static site: an index of every strategy card
+(yours in `strategies/` first, then the examples), a full report page per strategy with its readiness
+checklist, and the research report. It's deployed on Vercel from this repo (`../vercel.json`). Each
+deploy runs `scripts/vercel_build.sh`, which rebuilds the site with Python. If that fails, Vercel serves
+the copy committed in `public/`, so run `python -m goldlab site` before you commit to keep it current.
+
 ## The example strategies
 
 | Card | TF | Evidence |

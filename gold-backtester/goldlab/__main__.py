@@ -10,6 +10,7 @@
   data      [--tf 1h] [--start 2024-01-01]          download/refresh Dukascopy data
   paper     <strategy> [--tf 15m] [--once]          run the live loop against the paper broker
   webhook   [--port 8080]                           receive TradingView alerts
+  site      [--out public] [--quick]                build the static website (deployed to Vercel)
   list                                              list strategy files
 
 <strategy> is a .yaml card or a .py file (path, or a name inside strategies/ or strategies/examples/).
@@ -170,6 +171,12 @@ def cmd_paper(a):
     live_main(a.strategy, a.tf, broker=a.broker, once=a.once, config=a.config)
 
 
+def cmd_site(a):
+    from .site import build
+    rows = build(Path(a.out), quick=a.quick)
+    print(f"Built {len(rows)} strategy pages into {a.out}")
+
+
 def cmd_webhook(a):
     from .live.webhook import serve
     serve(port=a.port, config=a.config)
@@ -210,6 +217,9 @@ def main(argv=None):
     sp.add_argument("--broker", default="paper", choices=["paper", "oanda", "mt5"])
     sp.add_argument("--once", action="store_true"); sp.add_argument("--config", default=str(ROOT / "live.yaml"))
     sp.set_defaults(fn=cmd_paper)
+    sp = sub.add_parser("site", help="build the static website")
+    sp.add_argument("--out", default=str(ROOT / "public")); sp.add_argument("--quick", action="store_true")
+    sp.set_defaults(fn=cmd_site)
     sp = sub.add_parser("webhook"); sp.add_argument("--port", type=int, default=8080)
     sp.add_argument("--config", default=str(ROOT / "live.yaml")); sp.set_defaults(fn=cmd_webhook)
     a = p.parse_args(argv)

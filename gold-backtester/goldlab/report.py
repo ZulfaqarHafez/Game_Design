@@ -102,7 +102,8 @@ def _validation_html(v: dict | None) -> str:
             f'<th>Rule</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
 
-def render(result, validation: dict | None = None, fragment: bool = False, title: str | None = None) -> str:
+def render(result, validation: dict | None = None, fragment: bool = False, title: str | None = None,
+           max_candles: int = MAX_CANDLES, back_href: str | None = None) -> str:
     s = result.strategy
     d = result.data
     m = result.metrics
@@ -110,7 +111,7 @@ def render(result, validation: dict | None = None, fragment: bool = False, title
     a = d.attrs
     trades = result.trades
 
-    shown = d.iloc[-MAX_CANDLES:]
+    shown = d.iloc[-max_candles:]
     t0 = shown.index[0]
     to_ts = lambda ts: int(pd.Timestamp(ts).timestamp())
     candles = [[to_ts(t), round(o, 3), round(h, 3), round(l, 3), round(c, 3)]
@@ -201,6 +202,7 @@ def render(result, validation: dict | None = None, fragment: bool = False, title
         kpis=kpi_html, perf=perf_rows, risk=risk_rows, trades=tlist, months=_monthly_table(result.equity, st.initial_capital),
         validation=_validation_html(validation), cost=html.escape(cost), note=note,
         ntrades=f"{len(trades):,}", lwc=LWC, payload=payload,
+        back=f'<a class="back" href="{html.escape(back_href)}">← All strategies</a>' if back_href else "",
     )
     if fragment:
         return body
@@ -283,11 +285,14 @@ table.months td.yr.pos {{ color: var(--up); }} table.months td.yr.neg {{ color: 
 .settings {{ font-family: var(--mono); font-size: 12.5px; color: var(--muted); }}
 footer {{ font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }}
 footer a {{ color: var(--gold); }}
+a.back {{ color: var(--gold); text-decoration: none; font-size: 14px; font-weight: 600; }}
+a.back:hover, a.back:focus-visible {{ text-decoration: underline; }}
 @media (max-width: 860px) {{ .kpis {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }} .kpi:nth-child(3n) {{ border-right: 0; }} .kpi:nth-child(-n+3) {{ border-bottom: 1px solid var(--line); }} .cols {{ grid-template-columns: minmax(0, 1fr); }} #price {{ height: 360px; }} }}
 @media (max-width: 480px) {{ .kpis {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .kpi {{ border-right: 0; border-bottom: 1px solid var(--line); }} .kpi:nth-child(odd) {{ border-right: 1px solid var(--line); }} .kpi:nth-last-child(-n+2) {{ border-bottom: 0; }} .kpi .val {{ font-size: 18px; }} }}
 </style>
 <div class="wrap">
   <header>
+    {back}
     <div class="eyebrow"><span>{symbol} · {tf}</span><span>{start} → {end}</span><span>{bars} bars</span><span>data: {source}</span></div>
     <h1>{name}</h1>
     <p>{desc}</p>
