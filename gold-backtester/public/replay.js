@@ -85,9 +85,16 @@
       if (best) { closePos(best[2], fillPrice(P, best[2], best[1], s, false), j); return; }
     }
   }
+  function ticketLots() {
+    if ($("rp-sizemode").value !== "risk") return Number($("rp-lots").value);
+    var pct = Number($("rp-riskpct").value), dSL = Number($("rp-sl").value);
+    if (!(pct > 0) || !(dSL > 0)) return NaN;
+    return Math.max(0.01, Math.floor(cash() * pct / 100 / (dSL * 100) * 100) / 100);
+  }
   function openPos(side) {
     if (R.pos) { G.toast("Close your position first."); return; }
-    var j = R.cur, lots = Number($("rp-lots").value);
+    var j = R.cur, lots = ticketLots();
+    if ($("rp-sizemode").value === "risk" && !(Number($("rp-sl").value) > 0)) { G.toast("Risk-based sizing needs a stop distance."); $("rp-sl").focus(); return; }
     if (!(lots >= 0.01 && lots <= 100)) { G.toast("Lots must be between 0.01 and 100."); $("rp-lots").focus(); return; }
     var qty = qtyOf(lots), s = spread(j), dir = side === "long" ? 1 : -1;
     var price = dir > 0 ? R.bars.c[j] + s + slip() : R.bars.c[j] - slip();
@@ -99,10 +106,10 @@
     R.pos = { id: "M" + (R.session.trades.length + 1), side: dir, sideName: side, lots: lots, qty: qty, entry_price: price,
       entry_time: R.bars.t[j], entry_index: j, sl: sl, tp: tp, init_sl: sl, init_tp: tp, fee_entry: fee(qty), swap: 0,
       note: $("rp-note").value.trim().slice(0, 300), mods: [] };
-    G.store.set("rp-lots", lots);
+    if ($("rp-sizemode").value !== "risk") G.store.set("rp-lots", lots);
     log(side === "long" ? "buy" : "sell", { price: price, lots: lots, sl: sl, tp: tp });
     $("rp-note").value = "";
-    saveSession(); refresh();
+    saveSession(); refresh(); sheet(false);
     G.announce((side === "long" ? "Bought " : "Sold ") + lots + " lot at " + G.num(price) + ".");
   }
   function closePos(by, price, j) {
@@ -141,6 +148,13 @@
       mk.push({ time: t.exit_time, position: long ? "aboveBar" : "belowBar", shape: "circle", color: t.pnl >= 0 ? up : dn, size: 0.7, text: (t.pnl >= 0 ? "+" : "") + Math.round(t.pnl) });
     });
     if (R.pos) mk.push({ time: R.pos.entry_time, position: R.pos.side > 0 ? "belowBar" : "aboveBar", shape: R.pos.side > 0 ? "arrowUp" : "arrowDown", color: G.tok("--gold"), text: R.pos.side > 0 ? "Buy" : "Sell" });
+    if ($("rp-coach").checked && R.strategyTrades) {
+      var muted = G.tok("--muted");
+      R.strategyTrades.forEach(function (x) {
+        if (x.entry_time >= R.session.start_time) mk.push({ time: x.entry_time, position: x.side === "long" ? "belowBar" : "aboveBar", shape: "square", color: muted, size: 0.5, text: "S " + (x.side === "long" ? "buy" : "sell") });
+        mk.push({ time: x.exit_time, position: x.side === "long" ? "aboveBar" : "belowBar", shape: "square", color: muted, size: 0.5, text: "S exit" });
+      });
+    }
     mk = mk.filter(function (m) { return m.time <= R.bars.t[R.cur]; }).sort(function (a, b) { return a.time - b.time; });
     G.markers.setMarkers(mk);
   }
@@ -168,7 +182,9 @@
     $("rp-bid").textContent = G.num(b.c[j] - slip());
     $("rp-ask").textContent = G.num(b.c[j] + s + slip());
     var a = atrNow(); $("rp-atr").textContent = a ? "ATR(14) now " + G.num(a, 2) : "";
-    var lots = Number($("rp-lots").value) || 0, dSL = Number($("rp-sl").value) || 0, eq = cash();
+    var byRisk = $("rp-sizemode").value === "risk", lots = ticketLots() || 0, dSL = Number($("rp-sl").value) || 0, eq = cash();
+    $("rp-lots-wrap").hidden = byRisk; $("rp-riskpct-wrap").hidden = !byRisk; $("rp-computed").hidden = !byRisk;
+    if (byRisk) $("rp-computed").textContent = lots ? "= " + lots.toFixed(2) + " lot" + (lots === 1 ? "" : "s") : "set a stop first";
     $("rp-risk").textContent = dSL > 0 && lots > 0 ? "Risk at stop ≈ " + G.money(dSL * qtyOf(lots), 0) + " (" + G.num(dSL * qtyOf(lots) / eq * 100, 1) + "% of balance)" : "No stop: risk is open-ended";
     $("rp-ticket").hidden = !!P;
     $("rp-position").hidden = !P;
@@ -192,7 +208,23 @@
     $("rp-play").textContent = R.timer ? "❚❚ Pause" : "▶ Play";
     $("rp-play").setAttribute("aria-pressed", R.timer ? "true" : "false");
     $("rp-learn").disabled = n < 3;
+    // phone bar
+    $("rpm-sell").innerHTML = "Sell <span>" + G.num(b.c[j] - slip()) + "</span>"; $("rpm-buy").innerHTML = "Buy <span>" + G.num(b.c[j] + s + slip()) + "</span>";
+    $("rpm-sell").hidden = $("rpm-buy").hidden = !!P; $("rpm-close").hidden = !P;
+    if (P) { var opm = openPnl(j); $("rpm-close").innerHTML = "Close <span class=\"" + G.cls(opm) + "\">" + (opm >= 0 ? "+" : "") + G.money(opm, 0) + "</span>"; }
+    $("rpm-ticket").textContent = P ? "Stop / target" : (lots ? lots.toFixed(2) + " lot · " : "") + (dSL > 0 ? "SL " + dSL : "no stop");
+    $("rpm-status").innerHTML = "<span>" + new Date(b.t[j] * 1000).toISOString().slice(5, 16).replace("T", " ") + "</span><span>" + (P ? "open <b class=\"" + G.cls(openPnl(j)) + "\">" + (openPnl(j) >= 0 ? "+" : "") + G.money(openPnl(j), 0) + "</b> · " : "") + "bal <b>" + G.money(eq + (P ? openPnl(j) : 0), 0) + "</b>" + (n ? " · " + n + " trades" : "") + "</span>";
+    coach();
     markers(); orderLines();
+  }
+  // ---- coach: what the selected strategy did on the same bars (its backtest, which never sees the future either)
+  function coach() {
+    var on = $("rp-coach").checked, box = $("rp-coach-text");
+    box.hidden = !on; if (!on || !R.strategyTrades) { if (on) box.textContent = "No strategy results cover this period on " + R.tf + "."; return; }
+    var t = R.bars.t[R.cur], open = null, done = 0, net = 0;
+    R.strategyTrades.forEach(function (x) { if (x.entry_time <= t && x.exit_time > t) open = x; if (x.exit_time <= t && x.entry_time >= R.session.start_time) { done++; net += x.pnl; } });
+    box.textContent = "Strategy: " + (open ? open.side + " since " + G.dt(open.entry_time).slice(5) + " @ " + G.num(open.entry_price) : "flat") +
+      (done ? " · " + done + " trade" + (done === 1 ? "" : "s") + " closed this session, " + (net >= 0 ? "+" : "") + G.money(net, 0) : "");
   }
   function showDock(mode) {
     $("replay-dock").hidden = !mode;
@@ -219,13 +251,13 @@
   function loadBars(at, before) {
     return G.api("bars", { timeframe: R.tf, at: at, before: before, after: 3000 });
   }
-  function toColumns(b) { return { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, sp: b.sp, roll: b.roll }; }
+  function toColumns(b) { return G.unpackBars(b.bars).cols; }
   function startAt(t, resume) {
     R.picking = false; G.onChartClick = null;
     R.tf = resume ? resume.timeframe : G.state.tf;
     R.s = captureSettings(resume);
     $("rp-pick-status").textContent = "Loading bars…";
-    return loadBars(t, 400).then(function (b) {
+    return loadBars(t, 1500).then(function (b) {
       R.bars = toColumns(b); R.cur = b.index; R.last = b.last;
       if (resume) {
         R.session = resume; R.pos = resume.position ? JSON.parse(JSON.stringify(resume.position)) : null;
@@ -238,8 +270,27 @@
       saveSession();
     }).catch(function (e) { $("rp-pick-status").textContent = e.message; R.picking = true; if (!resume) beginPick(); else G.toast(e.message); });
   }
+  function isPhone() { return matchMedia("(max-width: 900px)").matches; }
+  // on phones the order ticket and position form live in a sheet above the fixed trade bar
+  function layout() {
+    var phone = R.active && isPhone(), run = $("rp-run"), body = $("rpm-sheet-body");
+    document.body.classList.toggle("replaying", R.active);
+    $("rp-mobile").hidden = !phone;
+    var nodes = [$("rp-ticket"), $("rp-position")];
+    if (phone) nodes.forEach(function (n) { if (n.parentNode !== body) body.appendChild(n); });
+    else { nodes.forEach(function (n) { if (n.parentNode !== run) run.insertBefore(n, run.querySelector(".rp-keys")); }); sheet(false); }
+  }
+  function sheet(open) {
+    if (!isPhone() && open) return;
+    $("rpm-sheet").hidden = !open; $("rpm-ticket").setAttribute("aria-expanded", open ? "true" : "false");
+    $("rpm-sheet-title").textContent = R.pos ? "Stop and target" : "Order ticket";
+    if (open) { var f = $("rpm-sheet-body").querySelector("input:not([hidden]), select"); if (f) f.focus({ preventScroll: true }); }
+  }
   function enter() {
     R.active = true; G.replayActive = true; G.setLocked(true); G.clearSelection();
+    var res = G.state.result;
+    R.strategyTrades = res && !res.strategy.manual && res.data.timeframe === R.tf ? res.trades.slice() : null;
+    layout();
     // the strategy's own lines would show the future and keep their times on the time axis: empty them
     // (drawChart() rebuilds them when replay ends)
     (G.state.plotSeries || []).forEach(function (s) { s.setData([]); });
@@ -248,6 +299,7 @@
     G.setBars(R.bars, R.tf, R.cur + 1);
     G.price.timeScale().setVisibleLogicalRange({ from: R.cur - 120, to: R.cur + 12 });
     $("rp-lots").value = G.store.get("rp-lots", 0.1);
+    $("rp-sizemode").value = G.store.get("rp-sizemode", "lots"); $("rp-coach").checked = !!G.store.get("rp-coach", false);
     var a = atrNow();
     if (a && !$("rp-sl").value) { $("rp-sl").value = (Math.round(a * 1.5 * 10) / 10).toFixed(1); $("rp-tp").value = (Math.round(a * 3 * 10) / 10).toFixed(1); }
     $("rp-pick-status").textContent = "";
@@ -262,7 +314,8 @@
       if (R.last) { pause(); G.toast("That's the end of the data for " + R.tf + "."); return Promise.resolve(false); }
       if (!R.loading) {
         R.loading = loadBars(R.bars.t[R.bars.t.length - 1] + 1, 0).then(function (b) {
-          ["t", "o", "h", "l", "c", "v", "sp", "roll"].forEach(function (k) { R.bars[k] = R.bars[k].concat(b[k]); });
+          var more = toColumns(b);
+          ["t", "o", "h", "l", "c", "v", "sp", "roll"].forEach(function (k) { R.bars[k] = R.bars[k].concat(more[k]); });
           R.last = b.last; R.loading = null;
           G.setBars(R.bars, R.tf, R.cur + 1);
         }).catch(function (e) { R.loading = null; pause(); G.toast(e.message); });
@@ -288,6 +341,7 @@
   function leave() {
     pause();
     R.active = false; G.replayActive = false; G.setLocked(false);
+    layout();
     G.draw.setOrderLines([]);
     showDock(null);
     if (G.state.result) G.drawChart();
@@ -321,7 +375,47 @@
       r.session_id = S.id; R.lastResult = r;
       G.showResult(r); G.selectTab("overview");
       G.announce("Review ready: " + r.metrics.total_trades + " trades, net " + G.money(r.metrics.net_profit, 0) + ".");
+      reportCard(S, r);
     }).catch(function (e) { G.toast("Couldn't review the session: " + e.message); });
+  }
+  // ---- report card: a grade, the numbers that matter, and habits worth noticing
+  function grade(S, r) {
+    var m = r.metrics, n = m.total_trades || 0, avgR = m.avg_r, win = m.percent_profitable || 0;
+    if (n < 3) return { letter: "–", cls: "", why: "Fewer than 3 trades: not enough to grade. Keep going." };
+    var score = avgR !== null && avgR !== undefined ? avgR : (m.avg_trade || 0) / Math.max(1, Math.abs(m.avg_loss || m.avg_trade || 1)) * 0.5;
+    var L = score >= 0.5 ? "A" : score >= 0.25 ? "B" : score >= 0 ? "C" : score >= -0.3 ? "D" : "F";
+    var why = avgR !== null && avgR !== undefined ? "Average " + G.num(avgR, 2) + "R per trade over " + n + " trades (" + Math.round(win) + "% winners)."
+      : "Average " + G.money(m.avg_trade) + " per trade over " + n + " trades; set stops to be graded in R.";
+    return { letter: L, cls: L === "A" || L === "B" ? "good" : L === "D" || L === "F" ? "bad" : "", why: why };
+  }
+  function reportCard(S, r) {
+    var m = r.metrics, g = grade(S, r), tr = r.trades, h = "";
+    h += '<div class="grade"><span class="letter ' + g.cls + '" aria-label="Grade ' + g.letter + '">' + g.letter + "</span><p><b>" + G.esc(S.name) + "</b><br>" + G.esc(g.why) + "</p></div>";
+    var best = tr.length ? Math.max.apply(null, tr.map(function (t) { return t.pnl; })) : 0, worst = tr.length ? Math.min.apply(null, tr.map(function (t) { return t.pnl; })) : 0;
+    h += '<div class="report-stats">' + [["Net", G.money(m.net_profit, 0), G.cls(m.net_profit)], ["Trades", m.total_trades, ""], ["Win rate", G.pct(m.percent_profitable, 0), ""],
+      ["Avg R", m.avg_r === null || m.avg_r === undefined ? "–" : G.num(m.avg_r, 2), G.cls(m.avg_r)], ["Best / worst", G.money(best, 0) + " / " + G.money(worst, 0), ""], ["Max drawdown", G.pct(m.max_drawdown_pct, 1), ""]]
+      .map(function (x) { return '<div><span class="l">' + x[0] + '</span><span class="v ' + x[2] + '">' + x[1] + "</span></div>"; }).join("") + "</div>";
+    var notes = [], noStop = S.trades.filter(function (t) { return t.sl === null; }).length;
+    var widened = 0; S.trades.forEach(function (t) { var prev = t.sl; (t.mods || []).forEach(function (md) { if (prev !== null && md.sl !== null && ((t.side === "long" && md.sl < prev) || (t.side === "short" && md.sl > prev))) widened++; prev = md.sl; }); });
+    var stops = tr.filter(function (t) { return t.exit_kind === "stop"; }).length, targets = tr.filter(function (t) { return t.exit_kind === "target"; }).length, manual = tr.filter(function (t) { return t.exit_kind === "close"; }).length;
+    notes.push([noStop ? "warn" : "ok", noStop ? noStop + " trade" + (noStop === 1 ? "" : "s") + " had no stop loss. Without one, a single trade can wipe out many winners." : "Every trade had a stop loss."]);
+    notes.push([widened ? "warn" : "ok", widened ? "You moved a stop further away " + widened + " time" + (widened === 1 ? "" : "s") + " (taking more risk after entry). Plan the stop before you enter." : "You never widened a stop after entering."]);
+    if (tr.length) notes.push(["", "Exits: " + stops + " by stop, " + targets + " at target, " + manual + " by hand."]);
+    var wins = tr.filter(function (t) { return t.pnl > 0; }), losses = tr.filter(function (t) { return t.pnl <= 0; });
+    if (wins.length && losses.length) {
+      var hw = wins.reduce(function (a, t) { return a + t.bars; }, 0) / wins.length, hl = losses.reduce(function (a, t) { return a + t.bars; }, 0) / losses.length;
+      notes.push([hl > hw * 1.5 ? "warn" : "ok", hl > hw * 1.5 ? "You held losers longer than winners (" + hl.toFixed(1) + " vs " + hw.toFixed(1) + " bars). Cut losers sooner." : "You held winners at least as long as losers (" + hw.toFixed(1) + " vs " + hl.toFixed(1) + " bars)."]);
+    }
+    if (R.strategyTrades) {
+      var st = R.strategyTrades.filter(function (x) { return x.entry_time >= S.start_time && x.exit_time <= S.current_time; }), sn = st.reduce(function (a, x) { return a + x.pnl; }, 0);
+      notes.push(["", "Over the same bars, the selected strategy took " + st.length + " trade" + (st.length === 1 ? "" : "s") + " for " + (sn >= 0 ? "+" : "") + G.money(sn, 0) + " (its own sizing)."]);
+    }
+    h += '<ul class="discipline">' + notes.map(function (x) { return '<li class="' + x[0] + '">' + G.esc(x[1]) + "</li>"; }).join("") + "</ul>";
+    $("report-body").innerHTML = h;
+    $("report-learn").disabled = S.trades.length < 3;
+    R.reviewing = S;
+    var d = $("report-dialog"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+    $("report-close").focus();
   }
   var learned = null;
   function learnFrom(list) {
@@ -404,8 +498,29 @@
       }).join(" ")
       : '<p class="hint">No sessions yet. Press Replay, pick a start, and trade.</p>';
   }
+  function allTrades() {
+    var out = [];
+    sessions().forEach(function (S) { S.trades.forEach(function (t) { out.push(Object.assign({ session: S.name, timeframe: S.timeframe }, t)); }); });
+    return out.sort(function (a, b) { return b.entry_time - a.entry_time; });
+  }
+  function renderJournal() {
+    var rows = allTrades();
+    $("journal").innerHTML = rows.length ? '<p class="row"><span class="hint">' + rows.length + " trades across " + sessions().length + " sessions.</span><button type=\"button\" class=\"btn small ghost\" id=\"journal-csv\">Download CSV</button></p>" +
+      '<div class="scroll" tabindex="0" aria-label="All replay trades"><table class="journal"><caption class=sr>All replay trades</caption><thead><tr><th scope=col>When</th><th scope=col>TF</th><th scope=col>Side</th><th class=num scope=col>Lots</th><th class=num scope=col>Entry</th><th scope=col>Exit by</th><th class=num scope=col>P&amp;L</th><th class=num scope=col>R</th><th scope=col>Why</th></tr></thead><tbody>' +
+      rows.slice(0, 500).map(function (t) {
+        return "<tr><td>" + G.dt(t.entry_time) + "</td><td>" + G.esc(t.timeframe) + '</td><td><span class="side ' + t.side + '">' + t.side + '</span></td><td class="num">' + t.lots + '</td><td class="num">' + G.num(t.entry_price) +
+          "</td><td>" + ({ SL: "Stop", TP: "Target", Close: "Closed" }[t.exit_by] || t.exit_by) + '</td><td class="num ' + G.cls(t.pnl) + '">' + G.num(t.pnl) + '</td><td class="num">' + (t.r === null || t.r === undefined ? "–" : G.num(t.r, 2)) + '</td><td class="note">' + G.esc(t.note || "") + "</td></tr>";
+      }).join("") + "</tbody></table></div>" : '<p class="hint">No trades yet. Every trade you place in replay shows up here, with your note.</p>';
+    var btn = $("journal-csv");
+    if (btn) btn.addEventListener("click", function () {
+      var cols = ["session", "timeframe", "side", "lots", "entry_time", "entry_price", "sl", "tp", "exit_time", "exit_price", "exit_by", "pnl", "r", "bars", "note"];
+      var lines = [cols.join(",")].concat(rows.map(function (t) { return cols.map(function (c) { var v = t[c]; if (/_time$/.test(c) && v) v = new Date(v * 1000).toISOString(); return v === null || v === undefined ? "" : /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v; }).join(","); }));
+      var blob = new Blob([lines.join("\n")], { type: "text/csv" }), a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "replay_trades.csv";
+      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    });
+  }
   function openSessions() {
-    renderSessions();
+    renderSessions(); renderJournal();
     var d = $("sessions-dialog"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
     $("sessions-close").focus();
   }
@@ -453,11 +568,36 @@
     $("rp-date").value = new Date(t * 1000).toISOString().slice(0, 10); startAt(t);
   });
   $("rp-step").addEventListener("click", function () { step(); });
+  $("rpm-step").addEventListener("click", function () { step(); });
+  $("rpm-buy").addEventListener("click", function () { openPos("long"); });
+  $("rpm-sell").addEventListener("click", function () { openPos("short"); });
+  $("rpm-close").addEventListener("click", function () { $("rp-close").click(); });
+  $("rpm-ticket").addEventListener("click", function () { sheet($("rpm-sheet").hidden); });
+  $("rpm-sheet-close").addEventListener("click", function () { sheet(false); });
+  matchMedia("(max-width: 900px)").addEventListener("change", layout);
+  $("rp-sizemode").addEventListener("change", function () { G.store.set("rp-sizemode", this.value); if (R.active) refresh(); });
+  $("rp-riskpct").addEventListener("input", function () { if (R.active) refresh(); });
+  $("rp-ticket").addEventListener("click", function (e) {
+    var b = e.target.closest(".chip-btn"); if (!b || !R.active) return;
+    var a = atrNow();
+    if (b.dataset.atr) { if (!a) { G.toast("ATR isn't ready yet"); return; } $("rp-sl").value = (Math.round(a * Number(b.dataset.atr) * 10) / 10).toFixed(1); }
+    else { var dSL = Number($("rp-sl").value); if (!(dSL > 0)) { G.toast("Set a stop first; targets are multiples of it"); return; } $("rp-tp").value = (Math.round(dSL * Number(b.dataset.r) * 10) / 10).toFixed(1); }
+    refresh();
+  });
+  $("rp-coach").addEventListener("change", function () { G.store.set("rp-coach", this.checked); if (R.active) refresh(); });
+  $("report-close").addEventListener("click", function () { $("report-dialog").close(); });
+  $("report-review").addEventListener("click", function () { $("report-dialog").close(); $("results").scrollIntoView({ behavior: "smooth", block: "start" }); });
+  $("report-learn").addEventListener("click", function () { $("report-dialog").close(); if (R.reviewing) learnFrom([R.reviewing]); });
+  document.querySelector(".sessions-tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-view]"); if (!b) return;
+    document.querySelectorAll(".sessions-tabs button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+    $("sessions-list").hidden = b.dataset.view !== "sessions"; $("journal").hidden = b.dataset.view !== "journal";
+  });
   $("rp-play").addEventListener("click", play);
   $("rp-speed").addEventListener("change", function () { if (R.timer) { pause(); play(); } });
   $("rp-buy").addEventListener("click", function () { openPos("long"); });
   $("rp-sell").addEventListener("click", function () { openPos("short"); });
-  $("rp-close").addEventListener("click", function () { if (R.pos) { var j = R.cur, P = R.pos; closePos("Close", P.side > 0 ? R.bars.c[j] - slip() : R.bars.c[j] + spread(j) + slip(), j); refresh(); } });
+  $("rp-close").addEventListener("click", function () { if (R.pos) { var j = R.cur, P = R.pos; closePos("Close", P.side > 0 ? R.bars.c[j] - slip() : R.bars.c[j] + spread(j) + slip(), j); refresh(); sheet(false); } });
   $("rp-position").addEventListener("submit", function (e) {
     e.preventDefault(); if (!R.pos) return;
     var sl = $("rp-pos-sl").value === "" ? null : round2(Number($("rp-pos-sl").value)), tp = $("rp-pos-tp").value === "" ? null : round2(Number($("rp-pos-tp").value));

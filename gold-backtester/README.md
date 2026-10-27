@@ -60,6 +60,20 @@ If you trade by eye, the website can capture what you do and turn it into a stra
    picks the few that best reproduce your entries, takes your usual stop (in ATRs) and target (in R), and writes
    a strategy card. It tells you how many of your entries the card repeats and how it did on all the data.
 
+Also in replay:
+
+- **Size by risk**: pick "Risk % of balance" and the lot size follows your stop distance. Stop presets in ATRs,
+  target presets in R.
+- **Coach**: "Show the strategy's trades" overlays what the selected strategy did on the same bars, as they are revealed.
+- **Report card** after Finish: a grade from your average R, the numbers that matter, and habits worth noticing
+  (trades without a stop, stops widened after entry, losers held longer than winners), plus how the strategy
+  did over the same bars.
+- **All trades** in My sessions is your journal across sessions, with notes, exportable as CSV.
+- On a phone the chart stays in view with Sell / Buy / Ticket / Next pinned to the bottom; the order ticket
+  opens as a sheet.
+
+How the recording, review and learning fit together: [docs/replay-architecture.md](docs/replay-architecture.md).
+
 Sessions are saved in your browser (**My sessions**). Export one and turn it into a card in the repo:
 
 ```
@@ -220,6 +234,13 @@ The backtester page has TradingView-style chart tools:
   position (risk/reward) and text. Drag points to adjust, Delete to remove, Ctrl+Z to undo, magnet to snap to
   candle prices. Drawings are pinned to time and price, so they stay in place across timeframes.
 - **Replay** and **My sessions**: see "Trade it by hand first" above.
+- **Share link** (under Rules): the whole strategy card travels in the URL, so a link opens the same rules anywhere.
+- **Theme** button in the header: follows your device, or light / dark.
+- **?** opens every shortcut. On a phone, add the page to your home screen: it opens full-screen and the chart
+  library and fonts stay cached (`web/sw.js`, `web/manifest.json`).
+
+Speed: a result carries the last 3,000 bars as integer deltas (about 25 KB compressed); older bars load as
+you scroll left. `tests/e2e/run.cjs` has a speed test with budgets.
 
 ### Testing the website
 

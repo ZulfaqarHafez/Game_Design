@@ -71,18 +71,21 @@ def test_exit_kinds_are_reported():
 
 # ------------------------------------------------------------------ bars
 def test_bars_for_replay_are_exact_and_continue():
+    from goldlab.webapi import unpack_bars
     t0 = int(SECS[at("2025-03-03")])
     code, b = handle("bars", {"timeframe": "1h", "at": t0, "before": 100, "after": 50})
     assert code == 200, b
-    assert b["t"][b["index"]] == t0 and b["index"] == 100 and len(b["t"]) == 150
-    assert all(len(b[k]) == 150 for k in ("o", "h", "l", "c", "v", "sp", "roll"))
+    rows = unpack_bars(b["bars"])
+    assert rows[b["index"]][0] == t0 and b["index"] == 100 and len(rows) == 150
+    assert len(b["bars"]["sp"]) == len(b["bars"]["roll"]) == 150
     i = at("2025-03-03")
-    assert b["c"][100] == DF.close.iloc[i] and b["sp"][100] == DF.spread.iloc[i]   # full precision
-    assert set(b["roll"]) <= {0, 1, 3}
-    code, nxt = handle("bars", {"timeframe": "1h", "at": b["t"][-1] + 1, "before": 0, "after": 10})
-    assert nxt["index"] == 0 and nxt["t"][0] == int(SECS[i + 50])
+    assert rows[100][4] == DF.close.iloc[i] and rows[100][1] == DF.open.iloc[i]      # full precision survives the encoding
+    assert abs(b["bars"]["sp"][100] - DF.spread.iloc[i]) < 1e-8
+    assert set(b["bars"]["roll"]) <= {0, 1, 3}
+    code, nxt = handle("bars", {"timeframe": "1h", "at": rows[-1][0] + 1, "before": 0, "after": 10})
+    assert nxt["index"] == 0 and unpack_bars(nxt["bars"])[0][0] == int(SECS[i + 50])
     code, d = handle("bars", {"timeframe": "1h", "at": "2025-03-03", "before": 0, "after": 1})
-    assert d["t"][0] == t0
+    assert unpack_bars(d["bars"])[0][0] == t0
     assert handle("bars", {"timeframe": "2m", "at": t0})[0] == 400
     assert handle("bars", {"timeframe": "1h", "at": "2099-01-01"})[0] == 400
 

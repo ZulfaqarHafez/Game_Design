@@ -52,6 +52,32 @@
     },
     shiftTime: function (t, di) { var lg = GSL.timeToLogical(t); return lg === null ? t : GSL.logicalToTime(Math.round(lg) + di); },
     setPanes: function (k) { var el = document.getElementById("chart"); if (el) el.style.setProperty("--panes", String(k)); },
+    // compact "gsl1" chart data from the API: integer deltas (see goldlab/webapi.py pack_series / pack_bars)
+    unpackSeries: function (s) {
+      var out = [], t = 0, v = 0, k = s.k;
+      for (var i = 0; i < s.t.length; i++) { t += s.t[i]; v += s.v[i]; out.push([t, v / k]); }
+      return out;
+    },
+    unpackBars: function (b) {
+      var n = b.n, k = b.k, cols = { t: new Array(n), o: new Array(n), h: new Array(n), l: new Array(n), c: new Array(n), v: new Array(n) }, rows = new Array(n);
+      var t = 0, c = 0, v = 0;
+      for (var i = 0; i < n; i++) {
+        t += b.t[i]; c += b.c[i]; if (b.v) v += b.v[i];
+        cols.t[i] = t; cols.c[i] = c / k; cols.o[i] = (c + b.o[i]) / k; cols.h[i] = (c + b.h[i]) / k; cols.l[i] = (c + b.l[i]) / k; cols.v[i] = b.v ? v / 1000 : 0;
+        rows[i] = [t, cols.o[i], cols.h[i], cols.l[i], cols.c[i], cols.v[i]];
+      }
+      if (b.sp) cols.sp = b.sp;
+      if (b.roll) cols.roll = b.roll;
+      return { cols: cols, rows: rows };
+    },
+    decodeResult: function (r) {
+      if (r.format !== "gsl1") return r;
+      r.candles = GSL.unpackBars(r.bars).rows;
+      var plots = {}; Object.keys(r.plots || {}).forEach(function (k) { plots[k] = GSL.unpackSeries(r.plots[k]); }); r.plots = plots;
+      ["equity", "drawdown", "buyhold"].forEach(function (k) { r[k] = GSL.unpackSeries(r[k]); });
+      r.format = "rows";
+      return r;
+    },
   };
 
   // ---------------------------------------------------------------- formatting
@@ -112,6 +138,7 @@
       wickUpColor: tok("--chart-up"), wickDownColor: tok("--chart-down") });
     markers = L.createSeriesMarkers(candles, []);
     price.subscribeCrosshairMove(legendUpdate);
+    price.timeScale().subscribeVisibleLogicalRangeChange(function (range) { if (range && range.from < 40) loadHistory(); });
     price.subscribeClick(function (p) {
       if (Date.now() - (GSL.clickConsumedAt || 0) < 400) return;      // a drawing tool used this click
       if (GSL.onChartClick && GSL.onChartClick(p)) return;            // bar replay is picking a start bar
@@ -201,9 +228,56 @@
     if (n > 300) price.timeScale().setVisibleLogicalRange({ from: n - 300, to: n + 5 }); else price.timeScale().fitContent();
     legendUpdate(null);
     var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · data: " + (r.data.source || "Dukascopy");
-    if (r.data.candles_shown < r.data.bars) note += " · chart shows the last " + r.data.candles_shown.toLocaleString() + " bars";
+    if (r.data.more_history) note += " · older bars load as you scroll left";
     $("chart-note").textContent = note;
     drawEquity();
+  }
+  // Older bars load when you scroll to the left edge (the first result only carries the last 3,000 bars).
+  var MAX_LOADED = 45000;
+  function loadHistory() {
+    var r = state.result;
+    if (!r || !r.data.more_history || state.loadingHistory || GSL.replayActive || !r.candles.length) return Promise.resolve(false);
+    if (r.candles.length >= MAX_LOADED) { r.data.more_history = false; return Promise.resolve(false); }
+    var first = r.candles[0][0], req = { timeframe: r.data.timeframe, at: first, before: 3000, after: 0 }, lr = state.lastReq || {};
+    ["strategy", "card", "params"].forEach(function (k) { if (lr[k] !== undefined && !r.strategy.manual) req[k] = lr[k]; });
+    state.loadingHistory = true;
+    $("chart-note").textContent = "Loading older bars…";
+    return api("bars", req).then(function (b) {
+      var rows = GSL.unpackBars(b.bars).rows.filter(function (row) { return row[0] < first; });
+      r.data.more_history = !b.first && rows.length > 0;
+      if (!rows.length) return false;
+      var range = price.timeScale().getVisibleLogicalRange(), n = rows.length;
+      r.candles = rows.concat(r.candles);
+      Object.keys(b.plots || {}).forEach(function (name) {
+        if (!r.plots[name]) return;
+        var pts = GSL.unpackSeries(b.plots[name]).filter(function (p) { return p[0] < first; });
+        r.plots[name] = pts.concat(r.plots[name]);
+      });
+      candles.setData(r.candles.map(function (c) { return { time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }; }));
+      Object.keys(r.plots).forEach(function (name, k) { if (state.plotSeries[k]) state.plotSeries[k].setData(r.plots[name].map(function (p) { return { time: p[0], value: p[1] }; })); });
+      GSL.setBars(columns(r.candles), r.data.timeframe);
+      drawMarkers();
+      if (range) price.timeScale().setVisibleLogicalRange({ from: range.from + n, to: range.to + n });
+      r.data.candles_shown = r.candles.length;
+      return true;
+    }).catch(function (e) { toast("Couldn't load older bars: " + e.message); r.data.more_history = false; return false; })
+      .then(function (ok) {
+        state.loadingHistory = false;
+        var note = r.data.bars.toLocaleString() + " bars, " + r.data.start.slice(0, 10) + " → " + r.data.end.slice(0, 10) + " · data: " + (r.data.source || "Dukascopy");
+        if (r.data.more_history) note += " · older bars load as you scroll left"; else if (r.candles.length > 3000) note += " · " + r.candles.length.toLocaleString() + " bars on the chart";
+        $("chart-note").textContent = note;
+        GSL.emit("history", ok);
+        return ok;
+      });
+  }
+  // keep loading until the chart holds bar `t` (used when you pick an old trade)
+  function ensureHistory(t) {
+    var r = state.result, tries = 0;
+    var step = function () {
+      if (!r.candles.length || r.candles[0][0] <= t || !r.data.more_history || tries++ >= 12) return Promise.resolve(r.candles.length && r.candles[0][0] <= t);
+      return loadHistory().then(function (ok) { return ok ? step() : false; });
+    };
+    return step();
   }
   function clearSelection() {
     state.priceLines.forEach(function (l) { candles.removePriceLine(l); });
@@ -219,7 +293,13 @@
   }
   function focusTrade(t, stay) {
     var r = state.result;
-    if (!r.candles.length || t.entry_time < r.candles[0][0]) { toast("That trade is older than the bars on the chart. Pick a shorter date range to see it."); return; }
+    if (!r.candles.length || t.entry_time < r.candles[0][0]) {
+      if (r.data.more_history && !state.loadingHistory) {
+        toast("Loading older bars for trade #" + t.n + "…");
+        ensureHistory(t.entry_time).then(function (ok) { if (ok) focusTrade(t, stay); else toast("Couldn't load bars back to that trade."); });
+      } else toast("That trade is older than the bars on the chart.");
+      return;
+    }
     clearSelection();
     state.selected = t.n;
     var bar = r.candles.length > 1 ? r.candles[1][0] - r.candles[0][0] : 3600;
@@ -511,7 +591,7 @@
     $("yaml").value = s.yaml || "";
     $("yaml").removeAttribute("aria-invalid");
     $("yaml-status").textContent = "";
-    if (decodeURIComponent(location.hash.slice(1)) !== id) {
+    if (decodeURIComponent(location.hash.slice(1)) !== id && location.hash.indexOf("#card=") !== 0) {
       try { history.replaceState(null, "", "#" + encodeURIComponent(id)); } catch (e) { /* ignore */ }
     }
     return true;
@@ -597,8 +677,8 @@
     setBusy(true);
     return api("backtest", req).then(function (r) {
       if (my !== state.seq) return;
-      clearError();
-      state.result = r; renderAll(); remember(r, req); GSL.emit("result", r);
+      clearError(); GSL.decodeResult(r);
+      state.result = r; state.lastReq = req; renderAll(); remember(r, req); GSL.emit("result", r);
       var m = r.metrics;
       announce("Backtest finished: " + r.strategy.name + ", net profit " + money(m.net_profit, 0) + " on " + m.total_trades + " trades, max drawdown " + pct(m.max_drawdown_pct, 1) + ".");
     }).catch(function (e) { if (my === state.seq) showError(e.message); })
@@ -780,8 +860,48 @@
     $("clear-extra").addEventListener("click", function () { state.extra = null; renderTrades(); });
     window.addEventListener("hashchange", function () {
       var id = decodeURIComponent(location.hash.slice(1));
+      if (id.indexOf("card=") === 0) { openSharedCard(id.slice(5)); return; }
       if (id && id !== state.current && state.strategies[id]) { setStrategy(id); runBacktest(); }
     });
+    // theme: follows the device until you pick one
+    var themes = ["auto", "light", "dark"], themeLabel = { auto: "Theme: follows your device", light: "Theme: light", dark: "Theme: dark" };
+    function applyTheme(t) {
+      if (t === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t);
+      $("theme-btn").setAttribute("aria-label", themeLabel[t]); $("theme-btn").title = themeLabel[t] + " (tap to change)";
+    }
+    applyTheme(store.get("theme", "auto"));
+    $("theme-btn").addEventListener("click", function () {
+      var next = themes[(themes.indexOf(store.get("theme", "auto")) + 1) % themes.length];
+      store.set("theme", next); applyTheme(next); toast(themeLabel[next]);
+    });
+    $("share-btn").addEventListener("click", function () {
+      var text = $("yaml").value.trim(); if (!text) { toast("Nothing to share yet"); return; }
+      var url = location.origin + location.pathname + "#card=" + encodeCard(text);
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast("Link copied. Anyone who opens it gets these rules."); })
+        .catch(function () { prompt("Copy this link:", url); });
+    });
+    $("keys-btn").addEventListener("click", openKeys);
+    $("keys-close").addEventListener("click", function () { $("keys-dialog").close(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "?" || document.querySelector("dialog[open]")) return;
+      var tag = (document.activeElement && document.activeElement.tagName) || "";
+      if (!/INPUT|TEXTAREA|SELECT/.test(tag)) { e.preventDefault(); openKeys(); }
+    });
+  }
+
+  function openKeys() { var d = $("keys-dialog"); if (d.showModal) d.showModal(); else d.setAttribute("open", ""); $("keys-close").focus(); }
+  // a strategy card travels inside the URL: #card=<base64url of the YAML>
+  function encodeCard(text) { return btoa(unescape(encodeURIComponent(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+  function decodeCard(b64) { try { return decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/")))); } catch (e) { return null; } }
+  function openSharedCard(b64) {
+    var text = decodeCard(b64);
+    if (!text || text.length > 20000) { showError("This shared link is damaged or too long."); return Promise.resolve(); }
+    var m = /^timeframe:\s*(\S+)/m.exec(text);
+    if (m && state.meta.data[m[1]]) { state.tf = m[1]; state.days = defaultDays(state.tf); markSeg("tf", "tf", state.tf); markSeg("range", "days", state.days); syncDates(); }
+    $("yaml").value = text; $("rules-block").open = true; state.custom = text;
+    $("yaml-status").textContent = "Opened from a shared link. Save it to keep it in this browser.";
+    toast("Opened a shared strategy");
+    return runBacktest();
   }
 
   // ---------------------------------------------------------------- boot
@@ -789,7 +909,7 @@
   Object.assign(GSL, {
     price: price, candles: candles, markers: markers, eqChart: eqChart,
     api: api, toast: toast, announce: announce, tok: tok, esc: esc, num: num, money: money, pct: pct, dt: dt, cls: cls,
-    drawChart: function () { drawChart(); }, drawMarkers: function () { drawMarkers(); }, runBacktest: runBacktest,
+    drawChart: function () { drawChart(); }, drawMarkers: function () { drawMarkers(); }, runBacktest: runBacktest, loadHistory: loadHistory, ensureHistory: ensureHistory,
     buildRequest: buildRequest, selectTab: selectTab, readNum: readNum, clearSelection: clearSelection,
     setStrategy: setStrategy, fillStrategySelect: fillStrategySelect, saveYaml: function () { return saveYaml(); },
     setTimeframe: function (tf) {
@@ -797,7 +917,7 @@
       state.tf = tf; state.days = defaultDays(tf); markSeg("tf", "tf", tf); markSeg("range", "days", state.days); syncDates();
     },
     // show a result that didn't come from a strategy backtest (e.g. trades placed in bar replay)
-    showResult: function (r) { state.result = r; clearError(); renderAll(); GSL.emit("result", r); },
+    showResult: function (r) { GSL.decodeResult(r); state.result = r; clearError(); renderAll(); GSL.emit("result", r); },
     setLocked: function (on) {
       state.locked = on;
       document.querySelectorAll("#strategy, #tf button, #range button, #start, #end, #preset button, #run, #apply-yaml, #run-checks, #use-min-lot")
@@ -808,6 +928,9 @@
     },
   });
   wire();
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () { /* optional */ }); });
+  }
   GSL.on("bars", function () { legendUpdate(null); });
   GSL.on("step", function () { legendUpdate(null); });
   markSeg("preset", "preset", state.preset);
@@ -818,9 +941,11 @@
     meta.strategies.forEach(function (s) { state.strategies[s.id] = s; });
     fillTimeframes(); fillStrategySelect();
     var want = decodeURIComponent((location.hash || "").slice(1));
+    var shared = want.indexOf("card=") === 0 ? want.slice(5) : null;
     var first = state.strategies[want] ? want : (meta.strategies.filter(function (s) { return s.mine; })[0] || {}).id || "tsmom_daily";
     if (!state.strategies[first]) first = meta.strategies[0].id;
     setStrategy(first);
+    if (shared) { try { history.replaceState(null, "", "#card=" + shared); } catch (e) { /* ignore */ } return openSharedCard(shared); }
     return runBacktest();
   }).catch(function (e) { setBusy(false); showError(e.message); });
 })();

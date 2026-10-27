@@ -49,6 +49,17 @@ small to tap reliably.
 Passed: 200% zoom without horizontal scroll, visible focus rings, labelled form fields, Escape closes the
 Pine dialog, reduced-motion respected, dark-mode contrast (all key pairs ≥ 5.6:1).
 
+## Second pass: phones and speed (27 Oct 2026)
+
+| Finding | Severity | Fix |
+|---|---|---|
+| In replay on a phone, Buy/Sell sat below the chart; after each order you scrolled back up to see the bars | 🔴 | Trade bar pinned to the bottom (Sell · Buy · Ticket · Next); order ticket and position form open as a sheet above it; toolbar and result strip hidden while replaying |
+| First result on a throttled phone took 5.4 s, 434 KB of it the backtest response | 🔴 | Integer-delta chart data and a 3,000-bar window (281 KB raw, ~60 KB compressed); older bars load on scroll; service worker caches the chart library and fonts |
+| Lot size had to be worked out by hand from the stop | 🟡 | Risk-% sizing; ATR stop presets and R target presets |
+| Dialogs floated mid-screen on phones | 🟢 | Dialogs are bottom sheets under 900 px |
+| No way to tell how a session went beyond the trade list | 🟡 | Report card with a grade and habit notes |
+| Toast covered the trade bar | 🟢 | Toast moves above the bar while replaying |
+
 ## Verification
 
 `tests/e2e/run.cjs` checks every item above automatically (axe scan with zero serious/critical issues,

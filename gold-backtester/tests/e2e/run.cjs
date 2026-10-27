@@ -33,6 +33,7 @@ async function newPage(opts) {
   const ctx = await browser.newContext({
     viewport: opts.viewport || { width: 1366, height: 900 }, colorScheme: opts.dark ? "dark" : "light",
     isMobile: !!opts.mobile, hasTouch: !!opts.mobile, acceptDownloads: true, reducedMotion: "reduce",
+    serviceWorkers: opts.sw ? "allow" : "block",     // the worker is tested on its own; elsewhere requests must stay interceptable
   });
   const page = await ctx.newPage();
   page.errors = [];
@@ -834,6 +835,10 @@ test("replay: buy, sell, stops, targets and closes fill exactly like the engine;
     assert(Math.abs(s.pnl - c.pnl) < 1e-4, `trade ${i + 1}: P&L matches (${c.pnl} vs ${s.pnl})`);
     eq(s.exit_time, c.exit_time, `trade ${i + 1}: exit time`); eq(s.exit_kind, kind[c.exit_by], `trade ${i + 1}: exit type`);
   });
+  assert(await p.evaluate(() => document.getElementById("report-dialog").open), "report card opens after the review");
+  const card = await p.textContent("#report-body");
+  assert(/Average .*R per trade|per trade over/.test(card) && /stop loss/.test(card), "report card grades the session and reviews habits: " + card.slice(0, 200));
+  await p.click("#report-close");
   assert(await p.isVisible("#mode-note") && /replay session/i.test(await p.textContent("#mode-note")), "results say they are from replay");
   assert(!(await p.isDisabled("#run")), "controls unlocked after review");
   await p.click('.tabs button[data-tab="trades"]');
@@ -875,7 +880,8 @@ test("replay: builds a strategy from your trades and backtests it", async () => 
   await open(p, "ema_trend_4h");
   // a session whose 1h entries all follow one rule: close crosses above the 20 EMA while above the 200 EMA
   await p.evaluate(async () => {
-    const b = await GSL.api("bars", { timeframe: "1h", at: "2024-01-02", before: 400, after: 1500 });
+    const raw = await GSL.api("bars", { timeframe: "1h", at: "2024-01-02", before: 400, after: 1500 });
+    const b = Object.assign({ index: raw.index }, GSL.unpackBars(raw.bars).cols);
     const e20 = TA.ema(b.c, 20), e200 = TA.ema(b.c, 200), atr = TA.atr(b.h, b.l, b.c, 14), trades = [];
     let busy = -1;
     for (let i = b.index; i < b.t.length - 12; i++) {
@@ -913,8 +919,13 @@ test("chart tools: phone layout, tap targets and accessibility", async () => {
     assert(!small.length, `${w}px: chart tool targets under 44px: ${JSON.stringify(small)}`);
     await startReplay(p, "2025-06-02");
     await noHorizontalScroll(p, `${w}px replay`);
-    const bs = await p.$$eval("#rp-buy, #rp-sell, #rp-step, #rp-play", els => els.map(e => Math.round(e.getBoundingClientRect().height)));
-    assert(bs.every(h => h >= 44), `${w}px: replay buttons at least 44px tall (${bs})`);
+    assert(await p.isVisible("#rp-mobile"), `${w}px: the trade bar is pinned to the bottom`);
+    const bar = await p.evaluate(() => { const r = document.getElementById("rp-mobile").getBoundingClientRect(); return { bottom: Math.round(r.bottom), vh: innerHeight }; });
+    assert(Math.abs(bar.bottom - bar.vh) <= 1, `${w}px: trade bar sits at the bottom of the screen (${bar.bottom} vs ${bar.vh})`);
+    const chart = await p.evaluate(() => { const r = document.getElementById("chart").getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom)]; });
+    assert(chart[0] >= 0 && chart[1] <= bar.vh - 100, `${w}px: the chart stays fully in view above the bar (${chart})`);
+    const bs = await p.$$eval("#rpm-sell, #rpm-buy, #rpm-ticket, #rpm-step", els => els.map(e => Math.round(e.getBoundingClientRect().height)));
+    assert(bs.every(h => h >= 44), `${w}px: trade bar buttons at least 44px tall (${bs})`);
     if (w === 390) { await axe(p, "replay dock (phone)"); }
     await close(p);
   }
@@ -925,6 +936,152 @@ test("chart tools: phone layout, tap targets and accessibility", async () => {
   await p.click("#sessions-btn"); await axe(p, "sessions dialog"); await p.click("#sessions-close");
   await startReplay(p, "2025-06-02"); await p.click("#rp-buy"); await axe(p, "replay with a position");
   await close(p);
+});
+
+test("replay on a phone: ticket sheet, risk-based sizing, presets, trade from the bar", async () => {
+  const p = await newPage({ viewport: { width: 390, height: 844 }, mobile: true });
+  await open(p, "ema_trend_4h");
+  await startReplay(p, "2025-06-02");
+  eq(await p.evaluate(() => document.getElementById("rp-ticket").parentNode.id), "rpm-sheet-body", "ticket lives in the bottom sheet on phones");
+  assert(await p.isHidden("#rpm-sheet"), "sheet starts closed");
+  await p.tap("#rpm-ticket"); assert(await p.isVisible("#rpm-sheet"), "Ticket opens the sheet");
+  await p.selectOption("#rp-sizemode", "risk"); await p.fill("#rp-riskpct", "1");
+  await p.tap('#rp-ticket button[data-atr="1.5"]'); await p.tap('#rp-ticket button[data-r="2"]');
+  const t = await p.evaluate(() => ({ sl: Number(document.getElementById("rp-sl").value), tp: Number(document.getElementById("rp-tp").value), computed: document.getElementById("rp-computed").textContent, atr: GSL.replay.state._atr[GSL.replay.state.cur] }));
+  assert(Math.abs(t.sl - Math.round(t.atr * 1.5 * 10) / 10) < 1e-9, "stop preset = 1.5 × ATR");
+  assert(Math.abs(t.tp - Math.round(t.sl * 2 * 10) / 10) < 1e-9, "target preset = 2R");
+  const lots = Math.max(0.01, Math.floor(10000 * 0.01 / (t.sl * 100) * 100) / 100);
+  assert(t.computed.indexOf(lots.toFixed(2)) >= 0, `risk sizing shows ${lots} lots (${t.computed})`);
+  await p.tap("#rpm-sheet-close"); assert(await p.isHidden("#rpm-sheet"), "Done closes the sheet");
+  await p.tap("#rpm-buy");
+  const pos = await p.evaluate(() => GSL.replay.state.pos);
+  assert(pos && Math.abs(pos.lots - lots) < 1e-9, "bought the risk-based size from the bar");
+  assert(await p.isVisible("#rpm-close") && await p.isHidden("#rpm-buy"), "bar shows Close while in a position");
+  await p.tap("#rpm-ticket"); assert(await p.isVisible("#rp-position") && /Stop and target/.test(await p.textContent("#rpm-sheet-title")), "sheet shows the position's stop and target");
+  await p.tap("#rpm-sheet-close");
+  await p.tap("#rpm-step"); eq(await p.evaluate(() => GSL.replay.state.cur), 1501, "› steps one bar");
+  assert(/bal|open/.test(await p.textContent("#rpm-status")), "status line shows balance");
+  if (await p.evaluate(() => !!GSL.replay.state.pos)) await p.tap("#rpm-close");
+  eq(await p.evaluate(() => GSL.replay.state.session.trades.length), 1, "trade recorded");
+  await p.tap("#rp-exit");
+  assert(await p.isHidden("#rp-mobile") && !(await p.evaluate(() => document.body.classList.contains("replaying"))), "bar goes away on exit");
+  eq(await p.evaluate(() => document.getElementById("rp-ticket").parentNode.id), "rp-run", "ticket returns to the dock");
+  await close(p);
+});
+
+test("replay coach: the strategy's own trades show up as you step", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  const strat = await p.evaluate(() => window.__gsl.result.trades);
+  const t = strat[strat.length - 10];
+  const date = new Date((t.entry_time - 5 * 14400) * 1000).toISOString().slice(0, 10);
+  await startReplay(p, date);
+  await p.check("#rp-coach");
+  const before = await p.evaluate(() => GSL.markers.markers().filter(m => /^S /.test(m.text)).length);
+  for (let i = 0; i < 12; i++) await p.click("#rp-step");
+  const after = await p.evaluate(() => GSL.markers.markers().filter(m => /^S /.test(m.text)));
+  assert(after.length > before, "strategy markers appear once their bar is revealed");
+  const cur = await p.evaluate(() => GSL.replay.state.bars.t[GSL.replay.state.cur]);
+  assert(after.every(m => m.time <= cur), "no marker from the future");
+  assert(/Strategy: (long|short|flat)/.test(await p.textContent("#rp-coach-text")), "coach text describes the strategy's position");
+  await p.uncheck("#rp-coach");
+  eq(await p.evaluate(() => GSL.markers.markers().filter(m => /^S /.test(m.text)).length), 0, "unchecking removes them");
+  await p.click("#rp-exit");
+  await close(p);
+});
+
+test("journal: every replay trade across sessions, with CSV export", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  for (const d of ["2025-03-03", "2025-06-02"]) {
+    await startReplay(p, d); await p.fill("#rp-note", "note for " + d); await p.click("#rp-buy"); await p.click("#rp-step");
+    if (await p.evaluate(() => !!GSL.replay.state.pos)) await p.click("#rp-close");
+    await p.click("#rp-exit");
+  }
+  await p.click("#sessions-btn"); await p.click('.sessions-tabs button[data-view="journal"]');
+  eq(await p.$$eval("#journal tbody tr", r => r.length), 2, "two trades from two sessions");
+  assert(/note for 2025-06-02/.test(await p.textContent("#journal")), "notes are shown");
+  const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#journal-csv")]);
+  const csv = fs.readFileSync(await dl.path(), "utf8").trim().split("\n");
+  eq(csv.length, 3, "CSV has a header and two rows"); assert(/^session,timeframe,side/.test(csv[0]) && /note for/.test(csv[1]), "CSV columns");
+  await axe(p, "journal");
+  await close(p);
+});
+
+test("share link: a strategy card travels in the URL; theme toggle; shortcuts dialog", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await p.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await p.click("#rules-block summary");
+  await p.fill("#yaml", "name: Shared idea\ntimeframe: 1h\nlong:\n  when: crossover(close, ema(close, 20))\n  sl_dist: 2 * atr(14)\n");
+  await p.click("#share-btn");
+  const url = await p.evaluate(() => navigator.clipboard.readText());
+  assert(/#card=[A-Za-z0-9_-]+$/.test(url), "link holds the card: " + url.slice(0, 80));
+  const q = await newPage();
+  await q.goto(url, { waitUntil: "domcontentloaded" }); await settled(q);
+  eq(await q.evaluate(() => window.__gsl.result.strategy.name), "Shared idea", "opening the link runs the shared rules");
+  eq(await q.evaluate(() => window.__gsl.tf), "1h", "and switches to its timeframe");
+  assert(/shared link/.test(await q.textContent("#yaml-status")), "status says where it came from");
+  await q.goto(BASE + "#card=!!!not-base64", { waitUntil: "domcontentloaded" }); await settled(q);
+  assert(!(await q.isHidden("#banner")) && /damaged/.test(await q.textContent("#banner")), "a broken link gets a clear message");
+  await close(q);
+  // theme
+  await p.click("#theme-btn"); eq(await p.evaluate(() => document.documentElement.getAttribute("data-theme")), "light", "auto → light");
+  await p.click("#theme-btn"); eq(await p.evaluate(() => document.documentElement.getAttribute("data-theme")), "dark", "light → dark");
+  await p.reload({ waitUntil: "domcontentloaded" });
+  eq(await p.evaluate(() => document.documentElement.getAttribute("data-theme")), "dark", "theme remembered before the app loads");
+  await settled(p);
+  await p.click("#theme-btn"); eq(await p.evaluate(() => document.documentElement.getAttribute("data-theme")), null, "dark → follows the device");
+  // shortcuts
+  await p.keyboard.press("?");
+  assert(await p.evaluate(() => document.getElementById("keys-dialog").open), "? opens the shortcuts");
+  await axe(p, "shortcuts dialog");
+  await p.keyboard.press("Escape"); assert(!(await p.evaluate(() => document.getElementById("keys-dialog").open)), "Escape closes it");
+  await p.click("#keys-btn"); assert(await p.evaluate(() => document.getElementById("keys-dialog").open), "button opens it too"); await p.click("#keys-close");
+  await close(p);
+});
+
+test("speed: first result, payload size, history on scroll, repeat visits", async () => {
+  const p = await newPage();
+  const t0 = Date.now();
+  await open(p, "ema_trend_4h");
+  const first = Date.now() - t0;
+  const res = await p.evaluate(() => performance.getEntriesByType("resource").map(r => ({ name: r.name.replace(/^https?:\/\/[^/]+/, ""), transfer: r.transferSize, raw: r.decodedBodySize, ms: Math.round(r.duration) })));
+  const bt = res.find(r => /op=backtest/.test(r.name)), js = res.filter(r => /\.js$/.test(r.name) && !/\/npm\//.test(r.name));
+  assert(bt, "backtest response recorded");
+  console.log(`      first result ${first} ms · backtest ${Math.round(bt.raw / 1024)} KB raw / ${Math.round(bt.transfer / 1024)} KB on the wire · own JS ${Math.round(js.reduce((a, r) => a + r.raw, 0) / 1024)} KB raw`);
+  assert(first < 8000, `first result took ${first} ms`);
+  assert(bt.raw < 400 * 1024, `backtest payload is ${Math.round(bt.raw / 1024)} KB raw (budget 400)`);
+  assert(js.reduce((a, r) => a + r.raw, 0) < 220 * 1024, "own JavaScript stays under 220 KB raw");
+  if (BASE.startsWith("https")) assert(bt.transfer < 120 * 1024, `backtest payload is ${Math.round(bt.transfer / 1024)} KB on the wire (budget 120)`);
+  // the first result carries a 3,000-bar window; older bars arrive when you scroll left
+  const r0 = await R(p);
+  eq(r0.candles.length, 3000, "first paint shows the last 3,000 bars"); assert(r0.data.more_history, "more history is available");
+  const firstBar = r0.candles[0][0];
+  await p.evaluate(() => GSL.price.timeScale().setVisibleLogicalRange({ from: -10, to: 200 }));
+  await p.waitForFunction(() => window.__gsl.result.candles.length > 3000, null, { timeout: 20000 });
+  const r1 = await R(p);
+  assert(r1.candles[0][0] < firstBar && r1.candles.length >= 5900, "older bars prepended (" + r1.candles.length + ")");
+  const times = r1.candles.map(c => c[0]); assert(times.every((t, i) => !i || t > times[i - 1]), "bars stay in order");
+  const plot = Object.values(r1.plots)[0]; assert(plot[0][0] < firstBar, "strategy lines cover the older bars too");
+  const vr = await p.evaluate(() => GSL.price.timeScale().getVisibleLogicalRange());
+  assert(vr.from > 2000, "view stays where it was after bars are prepended (from=" + Math.round(vr.from) + ")");
+  // picking the oldest trade loads history back to it
+  await p.click('.tabs button[data-tab="trades"]');
+  const oldest = await p.evaluate(() => window.__gsl.result.trades[0].n);
+  await p.click(`#trades tr[data-n="${oldest}"]`);
+  await p.waitForFunction(n => window.__gsl.selected === n, oldest, { timeout: 60000 });
+  await close(p);
+  if (BASE.startsWith("https")) {
+    const q = await newPage({ sw: true });
+    await open(q, "ema_trend_4h");
+    await q.evaluate(() => navigator.serviceWorker.ready);
+    await q.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15000 }).catch(() => {});
+    await q.reload({ waitUntil: "domcontentloaded" }); await settled(q);
+    const cdn = await q.evaluate(() => performance.getEntriesByType("resource").filter(r => /jsdelivr|gstatic/.test(r.name)).map(r => r.transferSize));
+    assert(cdn.length && cdn.every(x => x === 0), "chart library and fonts come from the worker's cache on a repeat visit (" + cdn.join(",") + ")");
+    await close(q);
+  }
 });
 
 // ------------------------------------------------------------------ runner

@@ -34,6 +34,8 @@ MAX_YAML = 20_000
 MAX_BODY = 200_000
 MAX_BARS = 150_000
 MAX_CANDLES = 30_000
+DEFAULT_CANDLES = 3_000       # first paint; older bars load as you scroll
+PLOT_WARMUP = 1_500
 MAX_TRADES = 3_000
 MAX_EQUITY_POINTS = 2_000
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
@@ -64,6 +66,47 @@ def _num(v):
 
 def _ts(t) -> int:
     return int(pd.Timestamp(t).timestamp())
+
+
+# --------------------------------------------------------------------------- compact series encoding
+# Chart data is sent as integer deltas: a 3,000-bar window packs to ~25 KB after brotli instead of
+# ~110 KB. Format "gsl1": {"t": [t0, dt1, dt2, ...], "v": [v0, dv1, ...], "k": scale}, value = int / k.
+
+def pack_series(times, values, scale: int) -> dict:
+    t = np.asarray(times, dtype=np.int64)
+    v = np.round(np.asarray(values, dtype=float) * scale).astype(np.int64)
+    if not len(t):
+        return {"t": [], "v": [], "k": scale}
+    return {"t": [int(t[0])] + np.diff(t).tolist(), "v": [int(v[0])] + np.diff(v).tolist(), "k": scale}
+
+
+def unpack_series(s: dict) -> list:
+    t = np.cumsum(np.asarray(s["t"], dtype=np.int64))
+    v = np.cumsum(np.asarray(s["v"], dtype=np.int64)) / s["k"]
+    return [[int(a), float(b)] for a, b in zip(t, v)]
+
+
+def pack_bars(secs, o, h, l, c, scale: int = 100, **extra) -> dict:
+    """OHLC as integers: close as deltas, open/high/low relative to the bar's close."""
+    t = np.asarray(secs, dtype=np.int64)
+    q = lambda x: np.round(np.asarray(x, dtype=float) * scale).astype(np.int64)
+    oc, hc, lc, cc = q(o), q(h), q(l), q(c)
+    out = {"n": int(len(t)), "k": scale, "t": [int(t[0])] + np.diff(t).tolist() if len(t) else [],
+           "c": [int(cc[0])] + np.diff(cc).tolist() if len(t) else [],
+           "o": (oc - cc).tolist(), "h": (hc - cc).tolist(), "l": (lc - cc).tolist()}
+    for k, v in extra.items():
+        out[k] = v
+    return out
+
+
+def unpack_bars(b: dict) -> list:
+    """Rows [t, o, h, l, c, v] from a packed block (the browser does the same in app.js)."""
+    t = np.cumsum(np.asarray(b["t"], dtype=np.int64))
+    c = np.cumsum(np.asarray(b["c"], dtype=np.int64))
+    k = b["k"]
+    o, h, l = (np.asarray(b[x], dtype=np.int64) + c for x in ("o", "h", "l"))
+    v = (np.cumsum(np.asarray(b["v"], dtype=np.int64)) / 1000) if "v" in b else np.zeros(len(t))
+    return [[int(t[i]), o[i] / k, h[i] / k, l[i] / k, c[i] / k, float(v[i])] for i in range(len(t))]
 
 
 def _card_files() -> list[Path]:
@@ -241,18 +284,10 @@ def _payload(s, st: Settings, tf: str, df: pd.DataFrame, res, t0: float, req: di
     res.metrics.update(return_stats(res))
     trades = res.trades
     n = len(trades)
-    max_c = int(min(req.get("max_candles") or MAX_CANDLES, MAX_CANDLES))
+    max_c = int(min(req.get("max_candles") or DEFAULT_CANDLES, MAX_CANDLES))
     shown = df.iloc[-max_c:]
-    secs = shown.index.as_unit("s").asi8  # unit-safe: indexes may be stored in ns or us
-    vol = shown["volume"].round(3) if "volume" in shown else pd.Series(0.0, index=shown.index)
-    candles = np.column_stack([secs, shown["open"].round(2), shown["high"].round(2),
-                               shown["low"].round(2), shown["close"].round(2), vol]).tolist()
-    candles = [[int(c[0])] + c[1:] for c in candles]
-    plots = {}
-    for name, ser in (res.strategy.plots or {}).items():
-        ser = ser.reindex(shown.index)
-        ok = ser.notna().to_numpy()
-        plots[name] = [[int(t), round(float(v), 3)] for t, v in zip(secs[ok], ser.to_numpy()[ok])]
+    bars = _bars_block(shown)
+    plots = _plots_block(res.strategy.plots or {}, shown.index)
     eq = res.equity
     step = max(1, len(eq) // MAX_EQUITY_POINTS)
     e = eq.iloc[::step]
@@ -264,23 +299,42 @@ def _payload(s, st: Settings, tf: str, df: pd.DataFrame, res, t0: float, req: di
     first_close = float(df["close"].iloc[0])
     bh = st.initial_capital * df["close"].loc[e.index] / first_close
     a = df.attrs
+    e_secs = e.index.as_unit("s").asi8
     return {
         "strategy": strategy,
         "data": {"symbol": "XAUUSD", "timeframe": tf, "source": a.get("source"), "start": str(df.index[0]),
-                 "end": str(df.index[-1]), "bars": len(df), "candles_shown": len(shown)},
+                 "end": str(df.index[-1]), "bars": len(df), "candles_shown": len(shown),
+                 "first_shown": int(shown.index[0].timestamp()), "more_history": len(shown) < len(_data(tf))},
         "settings": {k: _num(v) for k, v in asdict(st).items()},
         "metrics": {k: _num(v) for k, v in res.metrics.items()},
         "sides": _side_stats(trades) if n else {},
         "trades": _trade_rows(trades) if n else [], "trades_total": n, "trades_truncated": n > MAX_TRADES,
         "open_trades": [{**t, "entry_time": _ts(t["entry_time"]), "entry_price": _num(t["entry_price"])}
                         for t in res.open_trades],
-        "candles": candles, "plots": plots,
-        "equity": [[_ts(t), _num(v)] for t, v in e.items()],
-        "drawdown": [[_ts(t), _num(v)] for t, v in dd_s.items()],
-        "buyhold": [[_ts(t), _num(v)] for t, v in bh.items()],
+        "format": "gsl1", "bars": bars, "plots": plots,
+        "equity": pack_series(e_secs, e.to_numpy(), 100),
+        "drawdown": pack_series(e_secs, dd_s.to_numpy(), 10_000),
+        "buyhold": pack_series(e_secs, bh.to_numpy(), 100),
         "monthly": _monthly(eq, st.initial_capital),
         "elapsed_ms": int((time.time() - t0) * 1000),
     }
+
+
+def _bars_block(shown: pd.DataFrame, scale: int = 100, **extra) -> dict:
+    secs = shown.index.as_unit("s").asi8  # unit-safe: indexes may be stored in ns or us
+    vol = np.round((shown["volume"] if "volume" in shown else pd.Series(0.0, index=shown.index)).to_numpy(float) * 1000).astype(np.int64)
+    extra["v"] = ([int(vol[0])] + np.diff(vol).tolist()) if len(vol) else []
+    return pack_bars(secs, shown["open"], shown["high"], shown["low"], shown["close"], scale, **extra)
+
+
+def _plots_block(plots: dict, index) -> dict:
+    secs = index.as_unit("s").asi8
+    out = {}
+    for name, ser in plots.items():
+        ser = ser.reindex(index)
+        ok = ser.notna().to_numpy()
+        out[name] = pack_series(secs[ok], ser.to_numpy()[ok], 100)
+    return out
 
 
 def op_backtest(req: dict) -> dict:
@@ -354,20 +408,30 @@ def op_bars(req: dict) -> dict:
     df = _data(tf)
     secs = df.index.as_unit("s").asi8
     at = _unix(req.get("at"), "at")
-    before = int(min(max(int(req.get("before", 300)), 0), 2000))
-    after = int(min(max(int(req.get("after", 3000)), 1), 8000))
+    before = int(min(max(int(req.get("before", 300)), 0), 4000))
+    after = int(min(max(int(req.get("after", 3000)), 0), 8000))
     i0 = int(np.searchsorted(secs, at))
-    if i0 >= len(df):
+    if i0 >= len(df) and after > 0:
         raise ApiError("There are no bars after that time on this timeframe")
     lo, hi = max(0, i0 - before), min(len(df), i0 + after)
+    if hi <= lo:
+        raise ApiError("No bars in that range")
     sub = df.iloc[lo:hi]
-    vol = sub["volume"] if "volume" in sub else pd.Series(0.0, index=sub.index)
-    spread = sub["spread"].fillna(0) if "spread" in sub else pd.Series(0.0, index=sub.index)
-    return {"timeframe": tf, "index": i0 - lo, "first": lo == 0, "last": hi == len(df),
-            "t": [int(x) for x in secs[lo:hi]], "o": sub["open"].tolist(), "h": sub["high"].tolist(),
-            "l": sub["low"].tolist(), "c": sub["close"].tolist(), "v": vol.round(3).tolist(),
-            "sp": spread.tolist(), "roll": [int(x) for x in _rollovers(tf)[lo:hi]],
-            "data": {"start": str(df.index[0].date()), "end": str(df.index[-1].date())}}
+    spread = (sub["spread"].fillna(0) if "spread" in sub else pd.Series(0.0, index=sub.index)).round(8).tolist()
+    out = {"timeframe": tf, "index": i0 - lo, "first": lo == 0, "last": hi == len(df), "format": "gsl1",
+           "bars": _bars_block(sub, 1000, sp=spread, roll=[int(x) for x in _rollovers(tf)[lo:hi]]),
+           "data": {"start": str(df.index[0].date()), "end": str(df.index[-1].date())}}
+    if req.get("strategy") or req.get("card"):
+        # the strategy's plotted lines for these bars, warmed up on the bars before them
+        s = _strategy_from(req)
+        from .rules import Context, _ser
+        wlo = max(0, lo - PLOT_WARMUP)
+        ctx = Context(df.iloc[wlo:hi], vars(s.p), dict(s.card.get("vars") or {}))
+        plots = {}
+        for name, expr in (s.card.get("plots") or {}).items():
+            plots[name] = _ser(ctx.eval_static(expr), ctx.df.index).astype(float).iloc[lo - wlo:]
+        out["plots"] = _plots_block(plots, sub.index)
+    return out
 
 
 def _manual_window(req: dict, tf: str, trades: list[dict]):

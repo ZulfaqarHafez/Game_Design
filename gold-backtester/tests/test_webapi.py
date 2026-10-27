@@ -1,7 +1,7 @@
 """The website's backtest API: results come back, bad input is refused."""
 import pytest
 
-from goldlab.webapi import handle
+from goldlab.webapi import handle, unpack_bars, unpack_series
 
 
 def test_strategies_listed():
@@ -13,15 +13,18 @@ def test_strategies_listed():
 def test_backtest_returns_aligned_chart_data():
     code, r = handle("backtest", {"strategy": "london_breakout_15m", "timeframe": "15m"})
     assert code == 200, r
-    times = {c[0] for c in r["candles"]}
-    first = r["candles"][0][0]
-    assert r["candles"][0][0] > 1_500_000_000          # unix seconds, not ms or us
+    candles = unpack_bars(r["bars"])
+    times = {c[0] for c in candles}
+    first = candles[0][0]
+    assert first > 1_500_000_000                        # unix seconds, not ms or us
     for t in r["trades"]:
         for k in ("entry_time", "exit_time"):
             assert t[k] < first or t[k] in times         # every marker sits on a candle
     for pts in r["plots"].values():
-        assert all(p[0] in times for p in pts)
-    assert len(r["equity"]) == len(r["buyhold"]) == len(r["drawdown"])
+        assert all(p[0] in times for p in unpack_series(pts))
+    eq, bh, dd = (unpack_series(r[k]) for k in ("equity", "buyhold", "drawdown"))
+    assert len(eq) == len(bh) == len(dd) and eq[0][1] == 10_000
+    assert len(candles) == 3000 and r["data"]["more_history"] and r["data"]["first_shown"] == first
 
 
 def test_overrides_apply():
@@ -79,9 +82,10 @@ def test_matrix_results_are_consistent(slug, tf, preset):
     m = r["metrics"]
     assert r["data"]["timeframe"] == tf
 
-    times = [c[0] for c in r["candles"]]
+    candles = unpack_bars(r["bars"])
+    times = [c[0] for c in candles]
     assert times == sorted(set(times)), "candles strictly increasing"
-    for t, o, h, lo, c, v in r["candles"]:
+    for t, o, h, lo, c, v in candles:
         assert lo <= min(o, c) + 1e-9 and h >= max(o, c) - 1e-9 and v >= 0
 
     assert r["trades_total"] == m["total_trades"]
@@ -95,8 +99,9 @@ def test_matrix_results_are_consistent(slug, tf, preset):
         if t["risk"]:
             assert t["r"] == pytest.approx(t["pnl"] / t["risk"], rel=1e-3, abs=1e-3)
 
-    assert len(r["equity"]) == len(r["drawdown"]) == len(r["buyhold"]) > 0
-    assert all(d[1] <= 1e-9 for d in r["drawdown"]), "drawdown is never positive"
+    eq, dd, bh = (unpack_series(r[k]) for k in ("equity", "drawdown", "buyhold"))
+    assert len(eq) == len(dd) == len(bh) > 0
+    assert all(d[1] <= 1e-9 for d in dd), "drawdown is never positive"
     if preset == "tradingview":
         assert m["commission_paid"] == 0 and m["swap_paid"] == 0
 
@@ -124,3 +129,28 @@ def test_http_rules(method, op, raw, status):
     assert code == status, body
     if status != 200:
         assert body["error"]
+
+
+def test_chart_data_round_trips_exactly():
+    from goldlab.webapi import _data, pack_bars, pack_series
+    df = _data("1h").iloc[-500:]
+    secs = df.index.as_unit("s").asi8
+    rows = unpack_bars(pack_bars(secs, df.open, df.high, df.low, df.close, 1000))
+    for i, row in enumerate(rows):
+        assert row[0] == secs[i] and row[1:5] == [df.open.iloc[i], df.high.iloc[i], df.low.iloc[i], df.close.iloc[i]]
+    pts = unpack_series(pack_series(secs, df.close * 1.5, 100))
+    assert all(abs(p[1] - v) < 0.005 for p, v in zip(pts, df.close * 1.5))
+    assert unpack_series(pack_series([], [], 100)) == []
+
+
+def test_history_bars_join_the_first_result():
+    code, r = handle("backtest", {"strategy": "ema_trend_4h"})
+    first = r["data"]["first_shown"]
+    code, h = handle("bars", {"timeframe": "4h", "at": first, "before": 3000, "after": 0, "strategy": "ema_trend_4h"})
+    assert code == 200, h
+    rows = unpack_bars(h["bars"])
+    assert rows[-1][0] < first and len(rows) == 3000 and not h["first"]
+    assert set(h["plots"]) == set(r["plots"])
+    pts = unpack_series(h["plots"]["EMA fast"])
+    assert pts and pts[-1][0] < first
+    assert handle("bars", {"timeframe": "4h", "at": first, "before": 0, "after": 0})[0] == 400
