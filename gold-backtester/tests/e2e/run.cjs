@@ -188,15 +188,17 @@ test("account settings: capital, sizing type and fixed spread", async () => {
 test("tabs: click and keyboard (arrows, Home, End) switch panels", async () => {
   const p = await newPage();
   await open(p, "ema_trend_4h");
-  const tabs = ["overview", "performance", "analysis", "trades", "monthly", "checks", "properties", "compare"];
+  const tabs = ["overview", "outlook", "performance", "analysis", "trades", "monthly", "checks", "properties", "compare"];
   for (const t of tabs) {
+    if (t === "outlook") continue;                       // its content loads from the network; covered by its own test
     await p.click(`.tabs button[data-tab="${t}"]`);
     for (const u of tabs) eq(await p.isVisible(`#tab-${u}`), u === t, `${t} selected: ${u} visibility`);
     eq(await p.getAttribute(`.tabs button[data-tab="${t}"]`, "aria-selected"), "true", `${t} aria-selected`);
   }
   await p.focus('.tabs button[data-tab="compare"]');
   await p.keyboard.press("Home"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "overview", "Home");
-  await p.keyboard.press("ArrowRight"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "performance", "ArrowRight");
+  await p.keyboard.press("ArrowRight"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "outlook", "ArrowRight");
+  await p.keyboard.press("ArrowRight"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "performance", "ArrowRight again");
   assert(await p.isVisible("#tab-performance"), "panel follows keyboard");
   await p.keyboard.press("End"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "compare", "End");
   await p.keyboard.press("ArrowRight"); eq(await p.evaluate(() => document.activeElement.dataset.tab), "overview", "wraps around");
@@ -1041,6 +1043,35 @@ test("share link: a strategy card travels in the URL; theme toggle; shortcuts di
   await close(p);
 });
 
+test("outlook: the analyst's view loads with drivers, numbers, strategies, news and a track record", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  await p.click('.tabs button[data-tab="outlook"]');
+  await p.waitForSelector(".ol-head", { timeout: 120000 });
+  const word = await p.textContent(".ol-word");
+  assert(/^(bullish|bearish|neutral)$/.test(word.trim()), "direction shown: " + word);
+  assert(/\d+% · \d+ days/.test(await p.textContent(".ol-conf")), "confidence and horizon shown");
+  const sub = await p.textContent(".ol-title .hint");
+  assert(/Written by the analyst|Stand-in view/.test(sub), "says who wrote it: " + sub);
+  assert((await p.$$eval("table.ol-drivers tbody tr", r => r.length)) >= 3, "at least three drivers");
+  assert((await p.$$eval(".ol-kpis div", r => r.length)) >= 8, "technical and macro numbers shown");
+  assert((await p.$$eval(".ol-strats li", r => r.length)) >= 7, "every strategy's current position is listed");
+  assert((await p.$$eval(".ol-news li a", r => r.length)) >= 5, "headlines with links");
+  assert(/Track record/.test(await p.textContent(".ol-score")), "track record section");
+  const btn = await p.textContent("#ol-refresh");
+  assert(await p.isDisabled("#ol-refresh") && /Next refresh/.test(btn), "a fresh view can't be refreshed again for an hour: " + btn);
+  const api = await p.evaluate(() => fetch("/api/outlook?refresh=1", { method: "POST" }).then(r => r.json().then(j => [r.status, j.error])));
+  eq(api[0], 429, "early refresh is refused by the API too"); assert(/60 minutes/.test(api[1]), api[1]);
+  await axe(p, "outlook tab");
+  await close(p);
+  const m = await newPage({ viewport: { width: 390, height: 844 }, mobile: true });
+  await open(m, "ema_trend_4h");
+  await m.click('.tabs button[data-tab="outlook"]');
+  await m.waitForSelector(".ol-head", { timeout: 60000 });
+  await noHorizontalScroll(m, "outlook on a phone");
+  await close(m);
+});
+
 test("speed: first result, payload size, history on scroll, repeat visits", async () => {
   const p = await newPage();
   const t0 = Date.now();
@@ -1097,7 +1128,8 @@ function waitFor(url, ms) {
     const pub = path.join(ROOT, "public");
     for (const f of fs.readdirSync(path.join(ROOT, "web"))) fs.copyFileSync(path.join(ROOT, "web", f), path.join(pub, f));
     const port = 8800 + Math.floor(Math.random() * 100);
-    server = spawn("python3", ["-m", "goldlab", "serve", "--port", String(port), "--dir", pub], { cwd: ROOT, stdio: "ignore" });
+    const outlookDir = path.join(require("os").tmpdir(), "gsl-outlook-" + Date.now());
+    server = spawn("python3", ["-m", "goldlab", "serve", "--port", String(port), "--dir", pub], { cwd: ROOT, stdio: "ignore", env: { ...process.env, GSL_OUTLOOK_DIR: outlookDir } });
     BASE = `http://127.0.0.1:${port}/`;
     await waitFor(BASE, 20000);
   }

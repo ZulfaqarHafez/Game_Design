@@ -239,12 +239,30 @@ def cmd_serve(a):
             self.end_headers()
             self.wfile.write(data)
 
+        def _outlook(self, method):
+            from .analyst import http as outlook_http
+            query = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            code, out = outlook_http(method, query, {k.lower(): v for k, v in self.headers.items()})
+            data = _json.dumps(out).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
             if self.path.startswith("/api/lab"):
                 return self._api("GET")
+            if self.path.startswith("/api/outlook"):
+                return self._outlook("GET")
             return super().do_GET()
 
         def do_POST(self):
+            if self.path.startswith("/api/outlook"):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n:
+                    self.rfile.read(min(n, 4096))
+                return self._outlook("POST")
             if not self.path.startswith("/api/lab"):
                 self.send_error(404)
                 return

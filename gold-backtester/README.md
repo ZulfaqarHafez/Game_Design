@@ -81,6 +81,30 @@ python -m goldlab learn "Replay_1h_from_2025-06-02.json" --name "My pullback set
 python -m goldlab validate my_pullback_setup.yaml
 ```
 
+## The analyst: an outlook with its reasoning
+
+The **Outlook** tab is written by an AI analyst (Claude Opus 5.5) from free public data gathered on each run:
+
+- spot gold (gold-api.com) and daily technicals from COMEX gold futures (Yahoo Finance): trend regime, distance to
+  the 20/50/200-day EMAs, RSI, ATR, 20-day and 52-week ranges;
+- macro drivers from the Federal Reserve's FRED data: 10-year real and nominal yields, inflation breakevens, the broad
+  dollar index, VIX, WTI oil, the Fed funds target;
+- what every strategy card on the site is doing right now on live bars;
+- the last two days of headlines (Google News) on gold, the Fed, central banks and geopolitics.
+
+It answers with a direction, a calibrated confidence, the drivers it weighed (for and against), the news that mattered,
+risks, what would change its mind, levels and a plan sketch. Every call is stored and scored against what gold did over
+its horizon, so the tab shows a track record. Until `ANTHROPIC_API_KEY` is set, a transparent fixed-weight stand-in
+scores the same drivers so the page still works.
+
+Running it: `GET /api/outlook` serves the latest view (and makes one if none exists); `POST /api/outlook?refresh=1`
+makes a new one, allowed once an hour by anyone or any time with `Authorization: Bearer $CRON_SECRET` (or `$GSL_PIN`).
+A Vercel cron calls it daily. Storage is Vercel Blob on the site (`BLOB_READ_WRITE_TOKEN`) and `data/cache/outlook/`
+locally. Optional `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` send a message when the direction changes.
+Code: `goldlab/fundamentals.py` (data), `goldlab/analyst.py` (prompt, schema, storage, scoring), `api/outlook.py`.
+
+Not financial advice: the analyst reasons from public data and shows its working so you can disagree.
+
 ## Capturing your strategies
 
 Every strategy is a **card**: a short YAML file you can read like a trading plan.
@@ -276,6 +300,7 @@ goldlab/
   strategy.py    Python strategy base class      pine.py    card -> Pine v6
   journal.py     strategy and run history        validate.py  checks above
   manual.py      replayed manual trades          learn.py     manual trades -> strategy card
+  fundamentals.py  free macro, price and news data  analyst.py   the outlook (Claude), storage, scoring
   report.py      HTML report (Lightweight Charts)
   webapi.py      the website's API (backtest, validate, pine, bars, manual, learn)
 web/           the backtester page: app.js, ta.js (indicator maths), indicators.js, draw.js, replay.js

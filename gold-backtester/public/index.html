@@ -252,6 +252,7 @@
   <section class="tester" id="results" aria-label="Strategy tester results" tabindex="-1">
     <div class="tabs" role="tablist" aria-label="Results">
       <button role="tab" id="t-overview" data-tab="overview" aria-controls="tab-overview" aria-selected="true">Overview</button>
+      <button role="tab" id="t-outlook" data-tab="outlook" aria-controls="tab-outlook" aria-selected="false" tabindex="-1">Outlook</button>
       <button role="tab" id="t-performance" data-tab="performance" aria-controls="tab-performance" aria-selected="false" tabindex="-1">Performance</button>
       <button role="tab" id="t-analysis" data-tab="analysis" aria-controls="tab-analysis" aria-selected="false" tabindex="-1">Analysis</button>
       <button role="tab" id="t-trades" data-tab="trades" aria-controls="tab-trades" aria-selected="false" tabindex="-1">Trades</button>
@@ -276,6 +277,9 @@
       </div>
       <div id="equity"></div>
       <p class="hint" id="run-note"></p>
+    </div>
+    <div class="tab-body" id="tab-outlook" role="tabpanel" aria-labelledby="t-outlook" hidden>
+      <div id="outlook" aria-live="polite"><p class="hint">Loading the analyst's view…</p></div>
     </div>
     <div class="tab-body" id="tab-performance" role="tabpanel" aria-labelledby="t-performance" hidden></div>
     <div class="tab-body" id="tab-analysis" role="tabpanel" aria-labelledby="t-analysis" hidden>

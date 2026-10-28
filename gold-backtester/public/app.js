@@ -764,7 +764,7 @@
   }
 
   // ---------------------------------------------------------------- tabs
-  var TABS = ["overview", "performance", "analysis", "trades", "monthly", "checks", "properties", "compare"];
+  var TABS = ["overview", "outlook", "performance", "analysis", "trades", "monthly", "checks", "properties", "compare"];
   function selectTab(name, focus) {
     document.querySelectorAll(".tabs button").forEach(function (x) {
       var on = x.dataset.tab === name;
@@ -773,7 +773,86 @@
     });
     document.querySelectorAll(".tab-body").forEach(function (x) { x.hidden = x.id !== "tab-" + name; });
     if (name === "compare") renderCompare();
+    if (name === "outlook") loadOutlook();
     if (name === "overview" && eqChart) eqChart.timeScale().fitContent();
+  }
+
+  // ---------------------------------------------------------------- outlook (the analyst's view)
+  var outlook = { data: null, loading: false };
+  function loadOutlook(force) {
+    if (outlook.loading || (outlook.data && !force)) return Promise.resolve(outlook.data);
+    outlook.loading = true;
+    if (!outlook.data) $("outlook").innerHTML = '<p class="hint">Loading the analyst\'s view… the first one of the day can take up to a minute.</p>';
+    return fetch("/api/outlook").then(function (r) { return r.json().then(function (j) { if (!r.ok && !j.outlook) throw new Error(j.error || ("Request failed (" + r.status + ")")); return j; }); })
+      .then(function (d) { outlook.data = d; renderOutlook(d); return d; })
+      .catch(function (e) { $("outlook").innerHTML = '<div class="error-box">' + esc(e.message) + "</div>"; })
+      .then(function () { outlook.loading = false; });
+  }
+  function refreshOutlook() {
+    var btn = $("ol-refresh"); if (!btn) return;
+    btn.disabled = true; btn.textContent = "Reading the market…";
+    announce("Refreshing the outlook. This can take up to a minute.");
+    fetch("/api/outlook?refresh=1", { method: "POST" }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; }); })
+      .then(function (res) {
+        if (res.ok) { outlook.data = res.body; renderOutlook(res.body); announce("Outlook updated: " + res.body.outlook.direction + ", " + res.body.outlook.confidence + " percent."); }
+        else { toast(res.body.error || "Couldn't refresh"); if (res.body.outlook) { outlook.data = res.body; renderOutlook(res.body); } else { btn.disabled = false; btn.textContent = "Refresh now"; } }
+      }).catch(function (e) { toast(e.message); btn.disabled = false; btn.textContent = "Refresh now"; });
+  }
+  function ago(iso) {
+    var m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago";
+  }
+  function renderOutlook(d) {
+    var o = d.outlook, box = $("outlook");
+    if (!o) { box.innerHTML = '<div class="error-box">' + esc(d.error || "No outlook yet.") + "</div>"; return; }
+    var dir = o.direction, cls = dir === "bullish" ? "pos" : dir === "bearish" ? "neg" : "flat";
+    var arrow = dir === "bullish" ? "▲" : dir === "bearish" ? "▼" : "◆";
+    var t = (o.inputs || {}).technicals || {}, sp = (o.inputs || {}).spot;
+    var h = '<div class="ol-head">' +
+      '<div class="ol-dir ' + cls + '"><span class="ol-arrow" aria-hidden="true">' + arrow + '</span><span class="ol-word">' + esc(dir) + '</span><span class="ol-conf">' + o.confidence + '% · ' + o.horizon_days + ' days</span></div>' +
+      '<div class="ol-title"><h3>' + esc(o.headline) + '</h3><p class="hint">' +
+        (o.source === "claude" ? "Written by the analyst (Claude)" : "Stand-in view: fixed-weight scoring of the same drivers. Add an Anthropic API key in Vercel and the analyst takes over.") +
+        ' · updated ' + ago(o.time) + (sp ? ' · gold ' + money(sp.price, 0) : "") + '</p></div>' +
+      '<div class="ol-actions"><button type="button" class="btn small" id="ol-refresh"' + (d.can_refresh ? "" : " disabled") + '>' + (d.can_refresh ? "Refresh now" : "Next refresh " + (d.next_refresh_at ? "at " + new Date(d.next_refresh_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "later")) + '</button></div>' +
+      '</div>';
+    h += '<div class="ol-grid">';
+    h += '<section class="card ol-summary"><h3>The view</h3><p>' + esc(o.summary) + '</p>' +
+      '<h4>Plan sketch</h4><p>' + esc(o.suggested_plan) + '</p>' +
+      '<h4>What would change it</h4><p>' + esc(o.invalidation) + '</p>' +
+      (o.levels && (o.levels.support.length || o.levels.resistance.length) ? '<p class="ol-levels"><span>Support <b>' + o.levels.support.map(function (v) { return num(v, 0); }).join(" · ") + '</b></span><span>Resistance <b>' + o.levels.resistance.map(function (v) { return num(v, 0); }).join(" · ") + "</b></span></p>" : "") +
+      '</section>';
+    h += '<section class="card"><h3>Drivers</h3><div class="scroll"><table class="ol-drivers"><caption class="sr">Factors weighed</caption><thead><tr><th scope="col">Factor</th><th scope="col">Now</th><th scope="col">Effect</th></tr></thead><tbody>' +
+      (o.drivers || []).map(function (x) {
+        return '<tr><th scope="row">' + esc(x.factor) + '<small>' + esc(x.why) + '</small></th><td>' + esc(x.reading) + '</td><td><span class="chip ' + (x.effect === "supports" ? "pass" : x.effect === "against" ? "fail" : "") + '">' + esc(x.effect) + '</span><small>' + esc(x.weight) + ' weight</small></td></tr>';
+      }).join("") + '</tbody></table></div></section>';
+    h += '</div>';
+    var m = (o.inputs || {}).macro || [];
+    if (m.length || t.last_close) {
+      h += '<section class="card ol-macro"><h3>The numbers behind it</h3><div class="ol-kpis">' +
+        (t.last_close ? [["Trend", t.regime], ["1 week", pct(t.chg_1w_pct, 1)], ["1 month", pct(t.chg_1m_pct, 1)], ["vs 200-day EMA", pct(t.vs_ema200_pct, 1)], ["RSI 14", num(t.rsi14, 0)], ["Daily range (ATR)", money(t.atr14, 0)], ["From all-time high", pct(t.from_ath_pct, 1)]]
+          .map(function (k) { return '<div><span class="l">' + esc(k[0]) + '</span><span class="v">' + esc(k[1]) + '</span></div>'; }).join("") : "") +
+        m.map(function (x) { return '<div><span class="l">' + esc(x.name) + '</span><span class="v">' + esc(String(x.latest)) + ' <small>' + esc(x.unit) + '</small></span><span class="s ' + (x.chg_1m > 0 ? (x.rise_is === "supports" ? "pos" : x.rise_is === "against" ? "neg" : "") : x.chg_1m < 0 ? (x.rise_is === "supports" ? "neg" : x.rise_is === "against" ? "pos" : "") : "") + '">' + (x.chg_1m === null || x.chg_1m === undefined ? "" : (x.chg_1m > 0 ? "+" : "") + num(x.chg_1m, 2) + " over 1 m") + '</span></div>'; }).join("") +
+        '</div><p class="hint">Macro from FRED (Federal Reserve). Technicals from COMEX gold futures (GC=F). Spot from gold-api.com.</p></section>';
+    }
+    var st = (o.inputs || {}).strategies || [];
+    h += '<div class="ol-grid">';
+    h += '<section class="card"><h3>What the strategies say</h3><p>' + esc(o.strategy_view) + '</p>' +
+      (st.length ? '<ul class="ol-strats">' + st.map(function (s) { return '<li><span class="side ' + (s.position === "flat" ? "" : s.position) + '">' + esc(s.position) + '</span> ' + esc(s.name) + ' <small>' + esc(s.timeframe) + (s.position !== "flat" ? " · since " + esc(s.entry_time) + " @ " + num(s.entry_price) + " (" + (s.open_move_pct >= 0 ? "+" : "") + num(s.open_move_pct, 2) + "%)" : s.last_trade ? " · last: " + esc(s.last_trade) : "") + '</small></li>'; }).join("") + "</ul>" : "") + '</section>';
+    h += '<section class="card"><h3>Risks</h3><ul class="ol-list">' + (o.risks || []).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>" +
+      (o.news_takeaways && o.news_takeaways.length ? '<h4>From the news</h4><ul class="ol-list">' + o.news_takeaways.map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>" : "") + '</section>';
+    h += '</div>';
+    var news = (o.inputs || {}).news || [];
+    if (news.length) h += '<section class="card"><h3>Headlines it read</h3><ul class="ol-news">' + news.slice(0, 14).map(function (n) {
+      return '<li><a href="' + esc(n.link) + '" target="_blank" rel="noopener">' + esc(n.title) + '</a><small>' + esc((n.source || "").slice(0, 28)) + (n.time ? " · " + ago(n.time) : "") + '</small></li>';
+    }).join("") + '</ul></section>';
+    var sc = d.score || {};
+    h += '<section class="card ol-score"><h3>Track record</h3>' + (sc.scored ? '<p><b>' + sc.hits + ' of ' + sc.scored + '</b> directional calls were right (' + num(sc.hit_rate, 0) + '%); average move in the called direction ' + (sc.avg_return_in_direction_pct >= 0 ? "+" : "") + num(sc.avg_return_in_direction_pct, 2) + '%. ' + (sc.pending ? sc.pending + ' call' + (sc.pending === 1 ? "" : "s") + ' still open.' : "") + '</p>' +
+      '<div class="scroll"><table class="ol-track"><caption class="sr">Recent calls</caption><thead><tr><th scope="col">When</th><th scope="col">Call</th><th class="num" scope="col">Gold then</th><th class="num" scope="col">Later</th><th class="num" scope="col">Move</th><th scope="col">Result</th></tr></thead><tbody>' +
+      (sc.recent || []).slice().reverse().map(function (r) { return '<tr><td>' + esc(r.time.slice(0, 10)) + '</td><td>' + esc(r.direction) + ' ' + r.confidence + '%</td><td class="num">' + num(r.price_at, 0) + '</td><td class="num">' + num(r.price_after, 0) + '</td><td class="num ' + cls(r.return_pct) + '">' + (r.return_pct > 0 ? "+" : "") + num(r.return_pct, 2) + '%</td><td>' + (r.hit ? '<span class="chip pass">right</span>' : '<span class="chip fail">wrong</span>') + '</td></tr>'; }).join("") + '</tbody></table></div>'
+      : '<p class="hint">' + (d.calls > 1 ? d.calls + " calls so far; the first results arrive once a call's horizon has passed." : "Scoring starts once a call's horizon has passed. Every call is kept, so you can judge the analyst by its record, not its tone.") + '</p>') +
+      '<p class="hint">Not financial advice. The analyst reasons from public data and can be wrong; the page shows its reasoning so you can disagree.</p></section>';
+    box.innerHTML = h;
+    var btn = $("ol-refresh"); if (btn) btn.addEventListener("click", refreshOutlook);
   }
 
   // ---------------------------------------------------------------- wiring
