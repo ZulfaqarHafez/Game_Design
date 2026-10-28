@@ -19,7 +19,10 @@ class handler(BaseHTTPRequestHandler):
     def _run(self):
         u = urlparse(self.path)
         query = {k: v[0] for k, v in parse_qs(u.query).items()}
-        code, body = outlook_http(self.command, query, {k.lower(): v for k, v in self.headers.items()})
+        try:
+            code, body = outlook_http(self.command, query, {k.lower(): v for k, v in self.headers.items()})
+        except Exception as e:  # noqa: BLE001 - a JSON error beats a blank 500 page
+            code, body = 500, {"error": f"{type(e).__name__}: {str(e)[:300]}", "outlook": None}
         data = json.dumps(body, separators=(",", ":")).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")

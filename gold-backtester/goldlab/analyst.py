@@ -112,55 +112,92 @@ class FileStore:
 
 
 class BlobStore:
-    """Vercel Blob over its HTTP API (the same calls @vercel/blob makes)."""
+    """Vercel Blob over its HTTP API: the same requests @vercel/blob makes (API version 13)."""
     API = os.environ.get("VERCEL_BLOB_API_URL", "https://vercel.com/api/blob")
     VERSION = "13"
     PREFIX = "outlook/"
 
     def __init__(self, token: str):
         self.token = token
+        parts = token.split("_")
+        self.store_id = parts[3] if len(parts) > 3 else ""
         self.urls: dict[str, str] = {}
 
     def _headers(self, **extra):
-        return {"authorization": f"Bearer {self.token}", "x-api-version": self.VERSION, **extra}
+        return {"authorization": f"Bearer {self.token}", "x-api-version": self.VERSION,
+                "x-vercel-blob-store-id": self.store_id, "x-api-blob-request-id": f"{self.store_id}:{int(time.time() * 1000)}:{uuid.uuid4().hex[:8]}",
+                "x-api-blob-request-attempt": "0", **extra}
+
+    @staticmethod
+    def _check(r):
+        if r.status_code >= 400:
+            raise OSError(f"Blob API {r.status_code} for {r.request.method} {r.url.split('?')[0]}: {r.text[:200]}")
 
     def _url_for(self, name: str):
         import requests
         if name in self.urls:
             return self.urls[name]
-        r = requests.get(self.API, params={"prefix": self.PREFIX, "limit": "100"}, headers=self._headers(), timeout=15)
-        r.raise_for_status()
+        r = requests.get(self.API + "/", params={"prefix": self.PREFIX, "limit": "100"}, headers=self._headers(), timeout=15)
+        self._check(r)
         for b in r.json().get("blobs", []):
-            self.urls[b["pathname"][len(self.PREFIX):-5]] = b["url"]
+            path = b.get("pathname", "")
+            if path.startswith(self.PREFIX) and path.endswith(".json"):
+                self.urls[path[len(self.PREFIX):-5]] = b["url"]
         return self.urls.get(name)
 
     def get(self, name: str):
         import requests
+        url = self._url_for(name)
+        if not url:
+            return None
+        r = requests.get(url, params={"t": int(time.time() // 15)}, headers={"cache-control": "no-cache"}, timeout=15)
+        if r.status_code == 404:
+            self.urls.pop(name, None)
+            return None
+        self._check(r)
         try:
-            url = self._url_for(name)
-            if not url:
-                return None
-            r = requests.get(url, params={"t": int(time.time() // 30)}, headers={"cache-control": "no-cache"}, timeout=15)
-            if r.status_code == 404:
-                self.urls.pop(name, None)
-                return None
-            r.raise_for_status()
             return r.json()
-        except (OSError, ValueError):
+        except ValueError:
             return None
 
     def put(self, name: str, obj) -> None:
         import requests
-        r = requests.put(f"{self.API}/{self.PREFIX}{name}.json", data=json.dumps(obj, separators=(",", ":")).encode(),
-                         headers=self._headers(**{"x-content-type": "application/json", "x-add-random-suffix": "0",
-                                                  "x-allow-overwrite": "1", "x-cache-control-max-age": "30"}), timeout=30)
-        r.raise_for_status()
+        r = requests.put(self.API + "/", params={"pathname": f"{self.PREFIX}{name}.json"},
+                         data=json.dumps(obj, separators=(",", ":")).encode(),
+                         headers=self._headers(**{"x-vercel-blob-access": "public", "x-content-type": "application/json",
+                                                  "x-add-random-suffix": "0", "x-allow-overwrite": "1", "x-cache-control-max-age": "30"}),
+                         timeout=30)
+        self._check(r)
         self.urls[name] = r.json()["url"]
+
+
+class SafeStore:
+    """Uses Blob; if Blob misbehaves, falls back to files in /tmp for this request and records why,
+    so the page keeps working (views made during an outage last only as long as the function instance)."""
+
+    def __init__(self, primary, fallback):
+        self.primary, self.fallback, self.note = primary, fallback, None
+
+    def _try(self, op, *a):
+        if self.note is None:
+            try:
+                return getattr(self.primary, op)(*a)
+            except (OSError, ValueError, KeyError) as e:
+                self.note = f"Storage unavailable, using a temporary copy: {str(e)[:200]}"
+        return getattr(self.fallback, op)(*a)
+
+    def get(self, name):
+        return self._try("get", name)
+
+    def put(self, name, obj):
+        return self._try("put", name, obj)
 
 
 def store():
     tok = os.environ.get("BLOB_READ_WRITE_TOKEN")
-    return BlobStore(tok) if tok else FileStore()
+    if not tok:
+        return FileStore()
+    return SafeStore(BlobStore(tok), FileStore(Path(os.environ.get("TMPDIR", "/tmp")) / "gsl-outlook"))
 
 
 # --------------------------------------------------------------------------- the two analysts
@@ -377,4 +414,5 @@ def http(method: str, query: dict, headers: dict) -> tuple[int, dict]:
         "can_refresh": bool(latest is None or (age_min is not None and age_min >= REFRESH_MINUTES)),
         "next_refresh_at": _iso(_parse(latest["time"]) + timedelta(minutes=REFRESH_MINUTES)) if latest else None,
         "has_key": has_key(), "score": score(hist, [tuple(x) for x in closes], spot_now, now), "calls": len(hist),
+        "storage_note": getattr(st, "note", None),
     }
