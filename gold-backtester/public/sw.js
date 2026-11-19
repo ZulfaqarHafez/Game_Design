@@ -24,7 +24,9 @@ self.addEventListener("fetch", function (e) {
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/") && url.searchParams.get("op") !== "strategies") return;
   e.respondWith(fetch(req).then(function (res) {
-    if (res.ok) caches.open(CACHE).then(function (c) { c.put(req, res.clone()); });
+    if (res.ok) { caches.open(CACHE).then(function (c) { c.put(req, res.clone()); }); return res; }
+    // the host refused or failed (not "page not found"): a saved copy beats an error page
+    if (res.status === 403 || res.status >= 500) return caches.match(req).then(function (hit) { return hit || res; });
     return res;
   }).catch(function () { return caches.match(req).then(function (hit) { return hit || Response.error(); }); }));
 });
