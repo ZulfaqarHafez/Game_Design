@@ -50,7 +50,7 @@ Measured spread by time of day, Jan to 3 May 2026 (gold averaging $4,835):
 ### Inferences
 - Dollar spreads have widened roughly in line with price: about 1.9 times from 2024 to 2026 while price rose about 1.9 times. Any dollar spread quoted from the sub-$2,500 era (for example "0.15 to 0.25 raw") should be scaled up by about 1.6 to 2 times before use at $4,050, unless confirmed on a live feed.
 - For November 2026 (US standard time) the break is 22:00 to 23:00 UTC = 06:00 to 07:00 SGT. The expensive window for a Singapore trader is roughly 05:00 to 08:00 SGT: the hour before the break, the break itself, and the first hour after reopening.
-- The cheapest spread window is London morning, 16:00 to 20:00 SGT. The Asian morning (08:00 to 13:00 SGT) costs about $0.10 to $0.20 more per ounce on the ECN feed.
+- The cheapest spread window is London morning, 16:00 to 20:00 SGT. The Asian morning (08:00 to 13:00 SGT) cost about $0.05 more per ounce in Jan to May 2026 and about $0.15 to $0.20 more in Jun to Sep 2026 on the ECN feed.
 - A fixed "0.3" at IG is a floor, and the Dukascopy feed (median $0.65 to $0.75) is likely a conservative stand-in for a spread-only MAS broker in liquid hours; the true live spread at OANDA or IG at $4,050 gold has to be logged from the platform or the v20 pricing stream.
 
 ### Gaps
@@ -159,7 +159,7 @@ Summary for a Singapore resident (regulatory column from the sources above; veri
 | IG Asia | 0.05 of a $1/point contract (unconfirmed) | $0.05 | Yes (MAS) | Yes if the 0.05 minimum is current |
 | Phillip Nova 1OZ future | 1 oz | $1.00 | Yes | No (US$219 margin) |
 | MGC future | 10 oz | $10.00 | Via MAS brokers | No (US$2,180 or more) |
-| IBKR Singapore metals CFD | 1 oz | $1.00 | Yes | No (US$2 minimum fee per order) |
+| IBKR Singapore metals CFD | not confirmed (IBKR's spot gold minimum is 1 oz) | $1.00 at 1 oz | Yes | No (US$2 minimum fee per order) |
 | IC Markets / Pepperstone standard or raw | 0.01 lot = 1 oz | $1.00 | Offshore entity (third-party sources) | Technically yes at high leverage; 1% of account per $1 |
 | Offshore cent accounts | typically 0.01 cent lot = 0.01 oz | $0.01 | Offshore | Yes |
 | XM | not researched | n/a | Website blocked in Singapore since June 2025 | Not an option |
@@ -184,7 +184,7 @@ The commonly cited "5% (20:1)" does not apply to gold in Singapore: OANDA Asia P
 - IG Singapore: retail margin for spot gold (100 oz) 20%, tiered margining applies — [IG SG commodities product details](https://www.ig.com/sg/help-and-support/articles/720379-what-are-ig-s-commodities-cfd-product-details); [IG SG gold trading](https://www.ig.com/sg/commodities/gold-trading)
 - moomoo SG's CFD risk fact sheet says initial margin uses the required minimum margin rate of 20% for XAU/USD — [moomoo SG CFD risk fact sheet](https://static.futunn.com/upload/000/Moomoo%20SG%20%20-%20Risk%20Fact%20Sheet%20for%20Contracts%20for%20Difference%20%28EN%29-75422a5978cb81469b0fe5d22169f0a4.pdf)
 - Phillip Nova loco London gold (100 oz) and XAU crosses: 20% initial margin, as at 18 Nov 2026 — [Phillip Nova margin list](https://www.phillipnova.com.sg/wp-content/uploads/download/MarginList.pdf)
-- MAS raised the retail leveraged FX minimum margin from 2% to 5% from 8 October (2019); accredited, expert and institutional investors kept 2% — [Yahoo Finance Singapore](https://sg.finance.yahoo.com/news/fx-margin-rules-kick-oct-085800068.html)
+- MAS raised the retail leveraged FX minimum margin from 2% to 5% (20:1) from 8 October 2019; accredited, expert and institutional investors kept 2% — [Yahoo Finance Singapore](https://sg.finance.yahoo.com/news/fx-margin-rules-kick-oct-085800068.html); [Finance Magnates](https://www.financemagnates.com/forex/regulation/fx-leverage-cut-to-201-in-singapore/)
 - For comparison, gold is 20:1 (5%) for retail clients at OANDA under UK FCA rules and was 20:1 (5%) at OANDA Australia (table dated 16 Dec 2021); IBKR cites a 5% regulatory minimum initial margin for retail London Gold CFDs — [OANDA UK spreads and margin](https://www.oanda.com/uk-en/trading/spreads-margin/); [OANDA Australia margin rates 2021](https://www.oanda.com/assets/documents/1065/OAU_Margin_Rate_16_Dec_2021.pdf); [IBKR KB 3642](https://ibkb.interactivebrokers.com/article/3642)
 - Offshore: IC Markets' gold specification shows maximum leverage 1:2000 — [IC Markets spec sheet](https://cdn.icmarkets.com/uploads/Commodity+Specification+Sheet.pdf)
 - OANDA's Singapore pages carry the warning "Losses can exceed deposits" — [OANDA SG retail margin rates](https://www.oanda.com/sg-en/legal/margin-rates-retail/)
@@ -252,9 +252,15 @@ Adverse move that liquidates a $100 account at $4,050/oz (own arithmetic; stop-o
 With cost c, target T and stop S (all $/oz), the break-even win rate is (S + c) / (T + S): a $3/$3 scalp needs 55% to 60% wins at $0.30 to $0.60 cost, while a $10/$5 trade needs only 35% to 37%. Risking 5% to 10% per trade destroys even a genuine small edge (41% to 79% chance of halving the account within 500 trades at a 52% win rate), and it takes roughly 400 to 2,500 trades to tell a small edge from luck.
 
 ### Cited Findings
-- Formula and table are own derivations: a winner nets T − c, a loser costs S + c, so expectancy E = p(T − c) − (1 − p)(S + c) and break-even p* = (S + c)/(T + S) — [own calculation, script inputs and outputs recorded in these notes; cost inputs from section 2](../../gold-backtester/goldlab/engine/broker.py)
+- Kelly criterion and drawdowns: under Thorp's analysis, full-Kelly betting carries a 50% probability of a 50% drawdown; fractional Kelly lowers drawdown probability at a modest cost in growth — [PMC article summarising Thorp's drawdown results](https://pmc.ncbi.nlm.nih.gov/articles/PMC9955835)
+- Secondary sources state that half Kelly keeps roughly 75% of the growth at about one quarter of the variance, and that the main reason to bet a fraction is that edges are estimated from limited samples and are usually overestimated — [Tapeboard glossary: Kelly criterion](https://tapeboard.com/glossary/what-is-the-kelly-criterion); [LuxAlgo: Kelly criterion](https://www.luxalgo.com/library/concept/kelly-criterion/)
+- Bailey and López de Prado give the probabilistic Sharpe ratio and the minimum track record length needed to reject, at a chosen confidence, that a measured Sharpe ratio is below a threshold; the required length rises as the Sharpe ratio falls and as returns become more negatively skewed — [Journal of Risk: The Sharpe Ratio Efficient Frontier](https://www.risk.net/journal-risk/2223785/sharpe-ratio-efficient-frontier); [R documentation: MinTrackRecord](https://rdrr.io/cran/PerformanceAnalytics/man/MinTrackRecord.html)
+- The Deflated Sharpe Ratio corrects a backtest's Sharpe ratio for selection bias from trying many variants and for non-normal returns — [Bailey and López de Prado, SSRN 2460551](https://papers.ssrn.com/abstract=2460551)
 
-Break-even win rate after costs:
+### Inferences
+All figures below are own calculations (analytic formulas or 20,000-path Monte Carlo over 500 trades, wins and losses independent, fixed fraction of current equity risked per trade).
+
+Break-even win rate after costs. A winner nets T − c and a loser costs S + c, so expectancy per ounce is E = p(T − c) − (1 − p)(S + c), and the break-even win rate is p* = (S + c)/(T + S). Cost levels of $0.30 to $1.00 span the account types in section 2.
 
 | Target T | Stop S | Gross R:R | c = 0 | c = $0.30 | c = $0.45 | c = $0.60 | c = $1.00 | Net R:R at $0.45 |
 |---|---|---|---|---|---|---|---|---|
@@ -270,14 +276,6 @@ Break-even win rate after costs:
 | $10 | $5 | 2.0 | 33.3% | 35.3% | 36.3% | 37.3% | 40.0% | 1.75 |
 | $10 | $10 | 1.0 | 50.0% | 51.5% | 52.2% | 53.0% | 55.0% | 0.91 |
 | $10 | $20 | 0.5 | 66.7% | 67.7% | 68.2% | 68.7% | 70.0% | 0.47 |
-
-- Kelly criterion and drawdowns: under Thorp's analysis, full-Kelly betting carries a 50% probability of a 50% drawdown; fractional Kelly lowers drawdown probability at a modest cost in growth — [PMC article summarising Thorp's drawdown results](https://pmc.ncbi.nlm.nih.gov/articles/PMC9955835)
-- Secondary sources state that half Kelly keeps roughly 75% of the growth at about one quarter of the variance, and that the main reason to bet a fraction is that edges are estimated from limited samples and are usually overestimated — [Tapeboard glossary: Kelly criterion](https://tapeboard.com/glossary/what-is-the-kelly-criterion); [LuxAlgo: Kelly criterion](https://www.luxalgo.com/library/concept/kelly-criterion/)
-- Bailey and López de Prado give the probabilistic Sharpe ratio and the minimum track record length needed to reject, at a chosen confidence, that a measured Sharpe ratio is below a threshold; the required length rises as the Sharpe ratio falls and as returns become more negatively skewed — [Journal of Risk: The Sharpe Ratio Efficient Frontier](https://www.risk.net/journal-risk/2223785/sharpe-ratio-efficient-frontier); [R documentation: MinTrackRecord](https://rdrr.io/cran/PerformanceAnalytics/man/MinTrackRecord.html)
-- The Deflated Sharpe Ratio corrects a backtest's Sharpe ratio for selection bias from trying many variants and for non-normal returns — [Bailey and López de Prado, SSRN 2460551](https://papers.ssrn.com/abstract=2460551)
-
-### Inferences
-All figures below are own calculations (analytic formulas or 20,000-path Monte Carlo over 500 trades, wins and losses independent, fixed fraction of current equity risked per trade).
 
 Kelly fraction, f* = p − (1 − p)/b, where b = net win divided by net loss:
 
@@ -357,7 +355,7 @@ The measured data supports hard time filters (no entries from about one hour bef
 ### Cited Findings
 - Spread by clock time (2026): 16:00 to 17:00 New York median $1.16 (95th pct $3.11); first hour after reopen median $3.00 (max $8.09); second hour $1.09; London morning $0.58 to $0.62 — [own computation from Dukascopy 1h sample](../../gold-backtester/data/sample/XAUUSD_1h.csv.gz)
 - US data hours (09:00 to 11:00 New York in the 2026 sample) have ordinary median spreads ($0.71 to $0.73) but fat tails: 95th percentile $1.42 to $1.56 and maxima of $4.26 to $6.30 — [own computation from Dukascopy 1h sample](../../gold-backtester/data/sample/XAUUSD_1h.csv.gz)
-- Asian lunch (04:00 UTC, 12:00 SGT) has the smallest bars of the main sessions: median 5m TR $3.76 in 2026 against $5.4 to $8.2 at 00:00 to 02:00 UTC, with the spread at 19.5% of the bar — [own computation from Dukascopy 5m sample](../../gold-backtester/data/sample/XAUUSD_5m.csv.gz)
+- Asian lunch (04:00 UTC, 12:00 SGT) has the smallest bars of the main sessions: median 5m TR $3.76 in 2026 against $6.1 to $8.2 at 00:00 to 02:00 UTC, with the spread at 19.5% of the bar — [own computation from Dukascopy 5m sample](../../gold-backtester/data/sample/XAUUSD_5m.csv.gz)
 - Stops can fill away from their price at reopen and around news — [OANDA Asia Pacific margin rules, July 2025](https://www.oanda.com/assets/documents/1982/OAP_Margin_Rules_-_July_2025.pdf)
 - The "1% rule" caps risk on any single trade at 1% of the account; a common convention sets the daily loss limit at about three times per-trade risk and treats it as a hard stop for the day; some guides add cutting size after reaching half the daily limit and pausing after two consecutive losses (trading-education and prop-firm blogs, illustrative only) — [DayTrading.com: one percent rule](https://www.daytrading.com/one-percent-rule); [DayTradingToolkit: three levels of risk](https://daytradingtoolkit.com/beginners-guide/three-levels-of-risk-management); [MQL5 blog: daily-loss rule sizing](https://www.mql5.com/en/blogs/post/779669); [Pepperstone: 1% rule](https://pepperstone.com/en-gb/analysis/trading-guides/one-percent-rule-in-day-trading/)
 - Prop-firm limits as an external benchmark: daily loss limits of about 3% and maximum drawdowns of 3% to 10% of the account (for example a 1-step $10,000 evaluation with a 12% target, 3% daily loss; trailing 6% at another firm), measured on equity including open trades — [CryptoSlate: cheapest prop firms, updated 14 Nov 2026](https://cryptoslate.com/prop-firms/cheapest/); [MQL5 blog: daily-loss rule sizing](https://www.mql5.com/en/blogs/post/779669)
