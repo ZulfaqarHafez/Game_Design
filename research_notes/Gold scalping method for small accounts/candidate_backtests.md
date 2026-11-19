@@ -137,3 +137,30 @@ R5. And on 5m bars with the 15m... skipped: the 1h EMA200 filter needs 1h bars; 
   5m execution, 1h trend, stop 2.5 ATR(5m), target 2R: n=418, win 32%, avg -0.058R ±0.134, -0.47 $/oz, PF 0.94
     same at zero cost: n=418, win 37%, avg +0.112R ±0.139, +1.03 $/oz, PF 1.15
 ```
+
+## Addendum: C3 as a strategy card on a $100 account, and the project's readiness checklist (run 19 Nov 2026)
+
+The C3 rule was saved as the strategy card `strategies/trend_pullback_15m.yaml` and run on a $100 account trading a fixed 0.1 oz
+(0.001 lot) with 20% margin and realistic costs, 15m bars, 1 Jan 2025 - 3 May 2026:
+
+- Net profit **+$39.29 (+39.3%)** over 16 months; 215 trades (13.4 a month); 40.5% winners; profit factor 1.15; average +0.21R.
+- Max drawdown **$52.71 (30.5% from the equity peak)**; no order was rejected for margin; commission $1.51 and swap $2.71 in total.
+- Buy and hold gold over the same period: +71.7%.
+
+The project's readiness checklist gives the verdict **"Not ready"**:
+
+| Check | Result |
+|---|---|
+| Enough trades | Pass: 215 |
+| Profitable after costs (PF >= 1.2) | Warn: PF 1.15, net $39 |
+| Survives 1.5x costs / 2x costs | Pass: net $37 / $35 |
+| Pessimistic in-bar fills | Pass: net $39 |
+| Recent out-of-sample period (last 30% of data keeps >= 50% of the earlier profit rate) | **Fail: -$50/yr vs +$70/yr earlier** |
+| Monte Carlo, 5,000 reshuffles of trade order | Warn: 5th percentile final balance $58, median $140, 95th $220; 95th percentile max drawdown 65.6%; probability of ending below the start 21.6% |
+| Parameter stability (+/-20%) | Warn: neighbours keep 78% of the profit, 2 of them lose money |
+| No look-ahead (truncation test) | Pass |
+| Deflated Sharpe ratio | Warn: 0.87 counting 1 trial (annual Sharpe 1.14); it would be lower counting the ~45 runs made during this research |
+
+Reading: the candidate is the best of those tested, but by our own standards it is not yet proven: its profit came in 2025 and it lost
+money in the most recent 30% of the data (Dec 2025 - May 2026). The right next step is paper/replay testing and a minimum-size live test
+with a stop rule, not scaling up.
