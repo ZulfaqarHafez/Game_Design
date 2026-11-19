@@ -7,6 +7,7 @@ description: >
   twice the risk, London and New York hours only, at most two trades a day. Trades last hours, not minutes: on
   gold, anything faster gave its edge to the spread.
 timeframe: 15m
+default_range: all      # open on the whole tested period (Jan 2025 - May 2026), the same window as the research report
 symbol: XAUUSD
 tags: [trend, pullback, intraday, research-pick]
 evidence: "Weak, own backtest only: +0.21R per trade (95% interval +0.01 to +0.41) after costs on Jan 2025 - May 2026, 215 trades, profit factor 1.15; flat in early 2026; no independent published test on gold. Treat as a hypothesis to test at minimum size."

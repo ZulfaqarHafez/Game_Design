@@ -422,6 +422,31 @@ test("errors: first load failure shows a clear message", async () => {
   await close(p);
 });
 
+test("errors: a brief refusal by the host is retried without bothering the user", async () => {
+  const p = await newPage();
+  await open(p, "ema_trend_4h");
+  // the host's edge answers 403 twice (its own error shape, not ours), then lets the request through
+  let lab = 0, look = 0;
+  await p.route("**/api/lab?op=backtest", r => (++lab <= 2)
+    ? r.fulfill({ status: 403, contentType: "application/json", body: '{"error":{"code":"403","message":"Forbidden"}}' }) : r.continue());
+  await p.click("#run"); await settled(p);
+  assert(await p.isHidden("#banner"), "no error shown: " + (await p.textContent("#banner")));
+  eq(lab, 3, "sent three times in all");
+  await p.unroute("**/api/lab?op=backtest");
+  await p.route("**/api/outlook", r => (++look <= 1) ? r.fulfill({ status: 403, body: "Forbidden" }) : r.continue());
+  await p.click('.tabs button[data-tab="outlook"]');
+  await p.waitForSelector(".ol-head", { timeout: 120000 });
+  eq(look, 2, "outlook asked again after the refusal");
+  await p.unroute("**/api/outlook");
+  // a refusal that never lifts ends in a plain sentence, never "[object Object]"
+  await p.route("**/api/lab?op=backtest", r => r.fulfill({ status: 403, contentType: "application/json", body: '{"error":{"code":"403","message":"Forbidden"}}' }));
+  await p.click('.tabs button[data-tab="overview"]');
+  await p.click("#run"); await settled(p);
+  const msg = await p.textContent("#banner");
+  assert(/unexpected response \(403\)/.test(msg) && !/object Object/.test(msg), "plain message: " + msg);
+  await close(p);
+});
+
 test("empty state: a strategy that never trades explains what to do", async () => {
   const p = await newPage();
   await open(p, "ema_trend_4h");

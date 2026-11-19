@@ -57,6 +57,14 @@ class BrokerAdapter:
         raise NotImplementedError
 
     # orders ------------------------------------------------------------
+    def size_problem(self, qty: float) -> str | None:
+        """Why this account cannot trade exactly `qty` ounces, or None when it can.
+
+        An adapter never changes an order's size by itself: a size the account cannot
+        trade is refused with this reason, so a 0.1 oz order can never become 1 oz.
+        """
+        return None
+
     def market_order(self, side: int, qty: float, client_id: str, stop: float | None = None,
                      take_profit: float | None = None) -> dict:
         raise NotImplementedError

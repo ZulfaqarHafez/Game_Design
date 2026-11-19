@@ -108,3 +108,113 @@ def test_webhook_validation_and_target_position(tmp_path, monkeypatch):
         assert len(b.orders) == 2
     p.submit(msg)
     assert p.validate(msg, "1.2.3.4") == "duplicate"
+
+
+# -- order sizes: a tenth of an ounce stays a tenth of an ounce -------------------
+
+class FakeResponse:
+    def __init__(self, body, status=200):
+        self.status_code, self._body, self.text = status, body, str(body)
+
+    def json(self):
+        return self._body
+
+
+class FakeOandaSession:
+    """Stands in for requests.Session: answers the instrument lookup and records orders."""
+
+    def __init__(self, precision, minimum):
+        self.rules = {"tradeUnitsPrecision": precision, "minimumTradeSize": str(minimum)}
+        self.headers, self.posted, self.lookups = {}, [], 0
+
+    def request(self, method, url, **kw):
+        if url.endswith("/instruments"):
+            self.lookups += 1
+            return FakeResponse({"instruments": [{"name": "XAU_USD", **self.rules}]})
+        if method == "GET" and "/orders/@" in url:
+            return FakeResponse({"errorMessage": "no such order"}, 404)
+        if method == "POST" and url.endswith("/orders"):
+            self.posted.append(kw["json"]["order"])
+            return FakeResponse({"orderFillTransaction": {"id": "1"}})
+        raise AssertionError(f"unexpected request {method} {url}")
+
+
+def oanda(monkeypatch, precision, minimum):
+    from goldlab.live.brokers.oanda import OandaBroker
+    monkeypatch.setenv("OANDA_TOKEN", "test-token")
+    b = OandaBroker("001-001-1234567-001")
+    b.s = FakeOandaSession(precision, minimum)
+    return b
+
+
+def test_oanda_sends_a_tenth_of_an_ounce_where_the_account_allows_it(monkeypatch):
+    b = oanda(monkeypatch, precision=1, minimum=0.1)
+    assert b.size_problem(0.1) is None
+    b.market_order(1, 0.1, "c1", stop=3990.0, take_profit=4030.0)
+    b.market_order(-1, 0.3, "c2", stop=4020.0)
+    b.pending_order(1, 2.0, "stop", 4010.0, "c3", stop=3995.0)
+    assert [o["units"] for o in b.s.posted] == ["0.1", "-0.3", "2.0"]
+    assert b.s.posted[0]["stopLossOnFill"]["price"] == "3990.000"
+    assert b.s.lookups == 1                      # the account's size rules are read once
+    assert "steps of 0.1 oz" in b.size_problem(0.25)
+
+
+def test_oanda_refuses_a_size_the_account_cannot_trade(monkeypatch):
+    b = oanda(monkeypatch, precision=0, minimum=1)   # an account that trades whole ounces only
+    assert "from 1 oz" in b.size_problem(0.1)
+    with pytest.raises(RuntimeError, match="Order not sent"):
+        b.market_order(1, 0.1, "c1", stop=3990.0)
+    with pytest.raises(RuntimeError, match="Order not sent"):
+        b.pending_order(1, 1.5, "stop", 4010.0, "c2", stop=3995.0)
+    assert b.s.posted == []                      # nothing reached the broker, and nothing was rounded up
+    b.market_order(-1, 3, "c3", stop=4020.0)
+    assert b.s.posted[0]["units"] == "-3"
+
+
+def test_mt5_lot_sizes_are_exact_or_refused():
+    from types import SimpleNamespace
+    from goldlab.live.brokers.mt5 import MT5Broker
+    b = MT5Broker.__new__(MT5Broker)
+    b.symbol, b.contract = "XAUUSD", 100.0
+    b.info = SimpleNamespace(volume_step=0.001, volume_min=0.001)
+    assert b._lots(0.1) == 0.001 and b._lots(1.0) == 0.01
+    b.info = SimpleNamespace(volume_step=0.01, volume_min=0.01)
+    assert b._lots(1.0) == 0.01
+    with pytest.raises(RuntimeError, match="Order not sent"):
+        b._lots(0.1)                             # was silently sent as 0.01 lot (ten times the size)
+
+
+class SizeCheckingPaper(PaperBroker):
+    least = 1.0
+
+    def size_problem(self, qty):
+        return None if qty >= self.least else f"account minimum is {self.least:g} oz; the order was for {qty:g} oz"
+
+
+def run_small_card(tmp_path, bars, least):
+    s = load_strategy("donchian_breakout_4h", entry_len=20, exit_len=10)
+    st = Settings.realistic(initial_capital=100_000, qty_type="lots", qty_value=0.001, qty_step=0.1, min_qty=0.1)
+    start = 2750
+    feed = ReplayFeed(bars, start)
+    pb = SizeCheckingPaper(feed, tmp_path / "paper.json", 100_000, commission_per_lot=3.5, slippage=0.05)
+    pb.least = least
+    r = LiveRunner(s, "1h", pb, guard(tmp_path), st, tmp_path / "state", history=3000, max_signal_age=float("inf"))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        r.step()
+        while feed.advance():
+            r.step()
+    return pb, out.getvalue()
+
+
+def test_runner_sends_the_cards_own_size(tmp_path, random_walk):
+    pb, _ = run_small_card(tmp_path, random_walk, least=0.1)
+    entries = [f for f in pb.st["fills"] if "market" in f["reason"] or "entry" in f["reason"]]
+    assert len(entries) > 3
+    assert {round(f["qty"], 6) for f in entries} == {0.1}      # never rounded up to a whole ounce
+
+
+def test_runner_blocks_orders_below_the_account_minimum(tmp_path, random_walk):
+    pb, log = run_small_card(tmp_path, random_walk, least=1.0)
+    assert pb.st["fills"] == []
+    assert "blocked" in log and "account minimum is 1 oz" in log

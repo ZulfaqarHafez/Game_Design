@@ -369,7 +369,7 @@ class RuleStrategy(Strategy):
                  "trail_dist", "trail_trigger", "lots", "qty", "comment", "keep_pending"}
     CARD_KEYS = {"name", "description", "timeframe", "symbol", "author", "tags", "evidence", "notes",
                  "params", "vars", "long", "short", "exit", "cancel_when", "settings", "plots", "created",
-                 "source", "version", "warmup", "pine", "oca_entries", "labels"}
+                 "source", "version", "warmup", "pine", "oca_entries", "labels", "default_range"}
 
     def __init__(self, card: dict, **overrides):
         if not isinstance(card, dict):
@@ -379,6 +379,9 @@ class RuleStrategy(Strategy):
         unknown = set(card) - self.CARD_KEYS
         if unknown:
             raise RuleError(f"Unknown card keys: {sorted(unknown)}")
+        rng = card.get("default_range")
+        if rng is not None and rng != "all" and not (isinstance(rng, int) and not isinstance(rng, bool) and 1 <= rng <= 20000):
+            raise RuleError("default_range must be 'all' or a number of days (the range a backtest opens with)")
         self.card = card
         self.name = card.get("name", "Unnamed card")
         self.description = (card.get("description") or "").strip()

@@ -53,10 +53,21 @@ class MT5Broker(BrokerAdapter):
         fm = self.info.filling_mode
         self.filling = mt5.ORDER_FILLING_FOK if fm & 1 else (mt5.ORDER_FILLING_IOC if fm & 2 else mt5.ORDER_FILLING_RETURN)
 
-    def _lots(self, qty_oz: float) -> float:
+    def size_problem(self, qty):
         step = self.info.volume_step or 0.01
-        lots = round(round(qty_oz / self.contract / step) * step, 2)
-        return max(lots, self.info.volume_min or 0.01)
+        least = self.info.volume_min or 0.01
+        lots = qty / self.contract
+        if lots < least - 1e-9 or abs(round(lots / step) * step - lots) > 1e-9:
+            return (f"this MT5 account trades {self.symbol} from {least:g} lots in steps of {step:g} lots; "
+                    f"the order was for {lots:g} lots ({qty:g} oz)")
+        return None
+
+    def _lots(self, qty_oz: float) -> float:
+        problem = self.size_problem(qty_oz)
+        if problem:
+            raise RuntimeError(f"Order not sent: {problem}")
+        step = self.info.volume_step or 0.01
+        return round(round(qty_oz / self.contract / step) * step, 6)
 
     def _cid(self, client_id: str) -> str:
         tag = "gl" + hashlib.sha1(client_id.encode()).hexdigest()[:20]  # MT5 comments max 31 chars

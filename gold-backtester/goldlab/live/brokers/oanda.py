@@ -1,5 +1,9 @@
 """OANDA v20 REST adapter (practice or live), instrument XAU_USD (1 unit = 1 oz).
 
+Order sizes follow the account's own rules for the instrument (smallest size and
+number of decimals), read once from OANDA. Some accounts trade gold in whole
+ounces, others in tenths; a size the account cannot trade is refused, never rounded.
+
 Needs: an OANDA account (a free practice/demo account works), an API token
 (set the env var named in live.yaml, never commit it) and the account id.
 Check that your OANDA entity (e.g. OANDA Asia Pacific for Singapore) gives
@@ -32,6 +36,7 @@ class OandaBroker(BrokerAdapter):
         self.acct = account_id
         self.inst = instrument
         self.tag = tag
+        self._size_rules: tuple[int, float] | None = None
         self.s = requests.Session()
         self.s.headers.update({"Authorization": f"Bearer {token}", "Content-Type": "application/json",
                                "Accept-Datetime-Format": "RFC3339"})
@@ -104,8 +109,29 @@ class OandaBroker(BrokerAdapter):
     def _order(self, body):
         return self._req("POST", f"/v3/accounts/{self.acct}/orders", json={"order": body})
 
+    def size_rules(self) -> tuple[int, float]:
+        """(decimals allowed in an order size, smallest order size) for this account and instrument."""
+        if self._size_rules is None:
+            js = self._req("GET", f"/v3/accounts/{self.acct}/instruments", params={"instruments": self.inst})
+            info = js["instruments"][0]
+            self._size_rules = (int(info.get("tradeUnitsPrecision", 0)), float(info.get("minimumTradeSize", 1)))
+        return self._size_rules
+
+    def size_problem(self, qty):
+        decimals, least = self.size_rules()
+        if qty < least - 1e-9 or abs(round(qty, decimals) - qty) > 1e-9:
+            return (f"this OANDA account trades {self.inst} from {least:g} oz in steps of {10 ** -decimals:g} oz; "
+                    f"the order was for {qty:g} oz")
+        return None
+
+    def _units(self, side, qty) -> str:
+        problem = self.size_problem(qty)
+        if problem:
+            raise RuntimeError(f"Order not sent: {problem}")
+        return f"{side * qty:.{self.size_rules()[0]}f}"
+
     def _common(self, side, qty, client_id, stop, take_profit):
-        body = {"instrument": self.inst, "units": str(int(round(side * qty))), "positionFill": "DEFAULT",
+        body = {"instrument": self.inst, "units": self._units(side, qty), "positionFill": "DEFAULT",
                 "clientExtensions": {"id": client_id[:120], "tag": self.tag}}
         if stop is not None:
             body["stopLossOnFill"] = {"price": self._px(stop), "timeInForce": "GTC"}

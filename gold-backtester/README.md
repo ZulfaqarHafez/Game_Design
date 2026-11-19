@@ -114,10 +114,14 @@ with Singapore's 20% gold margin. In our tests (Jan 2025 - May 2026, realistic c
 trades (profit factor 1.15, worst drawdown $53, worst single loss $12), and it was the only candidate that stayed
 positive after costs; opening-range breakouts, sweep-and-reclaim fades, the Asia-hours drift and 5-minute versions
 did not. The readiness checklist still says **not ready** (it lost money in the most recent 30% of the data), so
-test it in replay and on a practice account before risking money.
+test it in replay and on a practice account before risking money. The card opens on its whole tested period
+(`default_range: all`); tap **6M** to see the losing stretch on its own: a fresh $100 started in November 2025 was down $26
+by May 2026 and skipped 127 signals because the balance no longer covered the margin for 0.1 oz.
 
 Small accounts: the `realistic` cost preset uses 20% margin, and a card can set `qty_step: 0.1` and `min_qty: 0.1`
 to trade in 0.1 oz steps where the broker allows 0.001 lot. Replay accepts lot sizes from 0.001.
+The paper and live bots send the card's own size and read the broker account's smallest size and step first:
+an order the account cannot trade exactly is blocked and logged, never rounded to another size.
 
 ## Capturing your strategies
 
@@ -164,6 +168,7 @@ statistically: see Validation below.
 | `exit` | `long_when`, `short_when`, `when` (close at market), `max_bars` |
 | `cancel_when` | cancel resting entry orders |
 | `oca_entries: true` | when one resting entry fills, cancel the other |
+| `default_range: all` | the date range a backtest opens with on the website: `all`, or a number of days (otherwise 90 days on 5m, 180 on 15m, 1 year on 30m, 2 years on 1h) |
 | `settings` | sizing (`qty_type`: lots, units, cash, percent_of_equity, risk_percent) and costs |
 
 Functions follow Pine: `sma ema rma wma hma rsi atr tr stdev highest lowest change roc cci stoch

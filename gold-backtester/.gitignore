@@ -13,3 +13,5 @@ journal/live/
 # large generated reports (re-create with --report)
 journal/runs/*/report.html
 journal/reports/
+# half-built website (the build swaps it into public/ when it finishes)
+public.tmp/

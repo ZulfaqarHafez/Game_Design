@@ -164,3 +164,28 @@ The project's readiness checklist gives the verdict **"Not ready"**:
 Reading: the candidate is the best of those tested, but by our own standards it is not yet proven: its profit came in 2025 and it lost
 money in the most recent 30% of the data (Dec 2025 - May 2026). The right next step is paper/replay testing and a minimum-size live test
 with a stop rule, not scaling up.
+
+
+## Addendum 2: a rough first look at unseen weeks (19 November 2026)
+
+The Dukascopy feed refused connections from the research machine on 19 November 2026, so the proper unseen-data run
+(May to November 2026, spot XAUUSD with recorded spread) has not been done. As a stand-in, the saved card was run
+unchanged on the only fresh 15-minute bars available: Yahoo's gold futures (GC=F), 11 September to 19 November 2026.
+
+| Item | Value |
+|---|---|
+| Data | Yahoo GC=F 15-minute bars, 4,531 bars, 11 Sep to 19 Nov 2026 (futures, not spot; no recorded spread) |
+| Costs | Commission and slippage as in the realistic preset; a fixed spread of $0.60 or $1.20 gave the same trades |
+| Trades | 26 (7 long, 19 short), 9 winners (35%) |
+| Net result on $100 at 0.1 oz | +$1.33, profit factor 1.04 |
+| Lowest balance / largest drawdown | $91.14 / $7.34 |
+| Best / worst trade | +$5.15 / -$2.91 |
+
+Reading: about break-even over ten weeks. Twenty-six trades cannot confirm or reject an edge of +0.2R (the 95% range on
+a sample this small is roughly plus or minus 0.6R), and the feed differs from the one the rule was tested on. It does
+show the card runs on current prices, takes shorts in a falling market, and did not approach the margin floor. The
+paper bot was also started once on the card (`python -m goldlab paper trend_pullback_15m --once`) and ran cleanly.
+
+The same day the live-order path was corrected for small sizes: the runner now sends the card's own size step instead
+of rounding to whole ounces, and the OANDA and MT5 adapters read the account's minimum size and step and refuse any
+order they cannot place exactly. Before this, a 0.1 oz signal would have been sent as 1 oz.

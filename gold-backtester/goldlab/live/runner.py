@@ -152,12 +152,12 @@ class LiveRunner:
                 pos = self.b.position()
             elif pos.side == o["side"] and self.settings.pyramiding <= 1:
                 continue
-            qty = max(round(o["qty"] * scale), 1)
+            qty = self._size(o["qty"] * scale)
             px = ask if o["side"] > 0 else bid
             stop, tp = self._bracket(o, px)
             blocked = self.risk.check(side=o["side"], qty=qty, price=px, stop=stop, equity=equity,
                                       position_qty=pos.qty if pos.side == o["side"] else 0.0,
-                                      spread=ask - bid, market=bid)
+                                      spread=ask - bid, market=bid) + self._size_block(qty)
             if blocked:
                 self.log("blocked", order=cid, reasons=blocked)
                 self.sent.add(cid)
@@ -183,12 +183,12 @@ class LiveRunner:
         for base_cid, o in desired.items():
             if (pos.side == o["side"] and self.settings.pyramiding <= 1):
                 continue
-            qty = max(round(o["qty"] * scale), 1)
+            qty = self._size(o["qty"] * scale)
             price = o["stop"] if o["type"] == "stop" else o["limit"]
             stop, tp = self._bracket(o, price)
             blocked = self.risk.check(side=o["side"], qty=qty, price=price, stop=stop, equity=equity,
                                       position_qty=pos.qty if pos.side == o["side"] else 0.0,
-                                      spread=ask - bid, market=bid, kind="pending")
+                                      spread=ask - bid, market=bid, kind="pending") + self._size_block(qty)
             if blocked:
                 self.log("blocked", order=base_cid, reasons=blocked)
                 continue
@@ -219,6 +219,16 @@ class LiveRunner:
                      "already stopped out); not chasing it", engine_side=eng_side, entry=mine[0].entry_time)
         self.save()
         return "ok"
+
+    def _size(self, qty: float) -> float:
+        """Snap an engine quantity to the strategy's own size step: whole ounces, or 0.1 oz where the card says so."""
+        step = self.settings.qty_step or 1.0
+        return round(max(round(qty / step) * step, self.settings.min_qty or step), 6)
+
+    def _size_block(self, qty: float) -> list[str]:
+        """A size the broker account cannot trade blocks the order; it is never rounded to another size."""
+        problem = self.b.size_problem(qty) if hasattr(self.b, "size_problem") else None
+        return [problem] if problem else []
 
     def _bracket(self, o: dict, ref: float):
         br = o.get("bracket") or {}

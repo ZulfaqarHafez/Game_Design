@@ -154,3 +154,24 @@ def test_history_bars_join_the_first_result():
     pts = unpack_series(h["plots"]["EMA fast"])
     assert pts and pts[-1][0] < first
     assert handle("bars", {"timeframe": "4h", "at": first, "before": 0, "after": 0})[0] == 400
+
+
+def test_a_card_can_choose_the_range_it_opens_with():
+    listed = {s["id"]: s for s in handle("strategies", None)[1]["strategies"]}
+    assert listed["trend_pullback_15m"]["default_days"] == 0          # "all": the whole tested period
+    assert listed["london_breakout_15m"]["default_days"] is None       # others keep the timeframe default
+    full = handle("backtest", {"strategy": "trend_pullback_15m"})[1]
+    assert full["data"]["start"].startswith("2025-01") and full["metrics"]["total_trades"] > 150
+    assert full["metrics"]["rejected_orders"] == 0                     # the $100 account never ran out of margin
+    recent = handle("backtest", {"strategy": "trend_pullback_15m", "start": "2025-11-05"})[1]
+    assert recent["data"]["start"].startswith("2025-11") and recent["metrics"]["total_trades"] < 60
+    other = handle("backtest", {"strategy": "london_breakout_15m"})[1]
+    assert other["data"]["bars"] < full["data"]["bars"]                 # still opens on the last 180 days
+
+    card = listed["trend_pullback_15m"]["yaml"]
+    assert "default_range: all" in card
+    for bad in ("default_range: forever", "default_range: 0", "default_range: true"):
+        code, body = handle("backtest", {"card": card.replace("default_range: all", bad)})
+        assert code == 400 and "default_range" in body["error"]
+    code, ninety = handle("backtest", {"card": card.replace("default_range: all", "default_range: 90")})
+    assert code == 200 and ninety["data"]["bars"] < recent["data"]["bars"]

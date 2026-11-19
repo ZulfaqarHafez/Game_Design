@@ -192,6 +192,16 @@ def _settings(s: RuleStrategy, req: dict) -> Settings:
     return st
 
 
+def _range_days(card: dict, tf: str):
+    """Days of history a backtest opens with: the card's own default_range, else the timeframe's. 0 or None = all."""
+    rng = (card or {}).get("default_range")
+    if rng == "all":
+        return 0
+    if isinstance(rng, int) and not isinstance(rng, bool) and rng > 0:
+        return rng
+    return DEFAULT_LOOKBACK_DAYS.get(tf)
+
+
 def _window(req: dict, s: RuleStrategy):
     tf = req.get("timeframe") or s.timeframe or "1h"
     if tf not in TIMEFRAMES or tf not in FROM_SAMPLE:
@@ -200,8 +210,8 @@ def _window(req: dict, s: RuleStrategy):
     start, end = req.get("start"), req.get("end")
     if start:
         df = df[df.index >= pd.Timestamp(start, tz="UTC")]
-    elif DEFAULT_LOOKBACK_DAYS.get(tf):
-        df = df[df.index >= df.index[-1] - pd.Timedelta(days=DEFAULT_LOOKBACK_DAYS[tf])]
+    elif _range_days(getattr(s, "card", None), tf):
+        df = df[df.index >= df.index[-1] - pd.Timedelta(days=_range_days(getattr(s, "card", None), tf))]
     if end:
         df = df[df.index < pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)]
     if len(df) < 50:
@@ -250,6 +260,7 @@ def op_strategies(_req: dict | None = None) -> dict:
             "evidence_level": _evidence_level(card.get("evidence")), "tags": card.get("tags", []),
             "params": card.get("params") or {}, "labels": card.get("labels") or {}, "settings": card.get("settings") or {},
             "mine": p.parent.name == "strategies", "yaml": p.read_text(),
+            "default_days": _range_days(card, card.get("timeframe", "1h")) if card.get("default_range") is not None else None,
             "report": f"/strategies/{slugify(card.get('name', p.stem))}.html",
         })
     ranges = {}

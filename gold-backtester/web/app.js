@@ -109,11 +109,31 @@
   }
 
   // ---------------------------------------------------------------- api
+  function wait(ms) { return new Promise(function (done) { setTimeout(done, ms); }); }
+  // The host can refuse or drop a request before it reaches our code (403, 503, 504, or no answer at all).
+  // Our own API never answers with those codes, and every call here is safe to send again, so try twice more.
+  function fetchRetry(url, opts, codes) {
+    var waits = [500, 1500];
+    codes = codes || [403, 503, 504];
+    function attempt(n) {
+      return fetch(url, opts).then(function (r) {
+        return codes.indexOf(r.status) >= 0 && n < waits.length ? wait(waits[n]).then(function () { return attempt(n + 1); }) : r;
+      }, function (e) {
+        if (n < waits.length) return wait(waits[n]).then(function () { return attempt(n + 1); });
+        throw e;
+      });
+    }
+    return attempt(0);
+  }
+  function unexpected(status) { return "The server returned an unexpected response (" + status + "). Try again in a moment."; }
   function api(op, body) {
     var opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
-    return fetch(API + "?op=" + op, opts).then(function (r) {
-      return r.json().catch(function () { return { error: "The server returned an unexpected response (" + r.status + "). Try again in a moment." }; })
-        .then(function (j) { if (!r.ok || j.error) throw new Error(j.error || ("Request failed (" + r.status + ")")); return j; });
+    return fetchRetry(API + "?op=" + op, opts).then(function (r) {
+      return r.json().catch(function () { return { error: unexpected(r.status) }; })
+        .then(function (j) {
+          if (!r.ok || j.error) throw new Error(typeof j.error === "string" ? j.error : unexpected(r.status));
+          return j;
+        });
     }, function () { throw new Error("Can't reach the backtest server. Check your connection and try again."); });
   }
 
@@ -580,7 +600,11 @@
     var s = strategyDef();
     state.custom = null;
     $("strategy").value = id;
-    if (!keepTf) { state.tf = state.meta.data[s.timeframe] ? s.timeframe : "1h"; state.days = defaultDays(state.tf); }
+    if (!keepTf) {
+      state.tf = state.meta.data[s.timeframe] ? s.timeframe : "1h";
+      // a card can say which range it opens with (default_range: all), so the page shows the period it was tested on
+      state.days = (s.default_days != null && state.tf === s.timeframe) ? s.default_days : defaultDays(state.tf);
+    }
     markSeg("tf", "tf", state.tf); markSeg("range", "days", state.days); syncDates();
     var ev = s.evidence_level || "Your idea";
     var evCls = ev === "Peer-reviewed" ? "ready" : (ev === "Folklore" ? "not-ready" : "caution");
@@ -783,7 +807,12 @@
     if (outlook.loading || (outlook.data && !force)) return Promise.resolve(outlook.data);
     outlook.loading = true;
     if (!outlook.data) $("outlook").innerHTML = '<p class="hint">Loading the analyst\'s view… the first one of the day can take up to a minute.</p>';
-    return fetch("/api/outlook").then(function (r) { return r.json().then(function (j) { if (!r.ok && !j.outlook) throw new Error(j.error || ("Request failed (" + r.status + ")")); return j; }); })
+    return fetchRetry("/api/outlook").then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok && !j.outlook) throw new Error(typeof j.error === "string" ? j.error : unexpected(r.status));
+        return j;
+      });
+    })
       .then(function (d) { outlook.data = d; renderOutlook(d); return d; })
       .catch(function (e) { $("outlook").innerHTML = '<div class="error-box">' + esc(e.message) + "</div>"; })
       .then(function () { outlook.loading = false; });
@@ -792,10 +821,11 @@
     var btn = $("ol-refresh"); if (!btn) return;
     btn.disabled = true; btn.textContent = "Reading the market…";
     announce("Refreshing the outlook. This can take up to a minute.");
-    fetch("/api/outlook?refresh=1", { method: "POST" }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; }); })
+    // only a refusal at the host's edge (403) is sent again: a refresh that reached the analyst must not run twice
+    fetchRetry("/api/outlook?refresh=1", { method: "POST" }, [403]).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, body: j }; }); })
       .then(function (res) {
-        if (res.ok) { outlook.data = res.body; renderOutlook(res.body); announce("Outlook updated: " + res.body.outlook.direction + ", " + res.body.outlook.confidence + " percent."); }
-        else { toast(res.body.error || "Couldn't refresh"); if (res.body.outlook) { outlook.data = res.body; renderOutlook(res.body); } else { btn.disabled = false; btn.textContent = "Refresh now"; } }
+        if (res.ok && res.body.outlook) { outlook.data = res.body; renderOutlook(res.body); announce("Outlook updated: " + res.body.outlook.direction + ", " + res.body.outlook.confidence + " percent."); }
+        else { toast(typeof res.body.error === "string" ? res.body.error : "Couldn't refresh. Try again in a moment."); if (res.body.outlook) { outlook.data = res.body; renderOutlook(res.body); } else { btn.disabled = false; btn.textContent = "Refresh now"; } }
       }).catch(function (e) { toast(e.message); btn.disabled = false; btn.textContent = "Refresh now"; });
   }
   function ago(iso) {
