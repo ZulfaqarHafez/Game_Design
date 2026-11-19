@@ -1,0 +1,53 @@
+name: Trend pullback (15m entries, 1h trend)
+description: >
+  The method picked by the November 2026 scalping research: the only candidate that stayed positive after
+  realistic costs in our own tests. Trade only in the direction of the 1-hour trend (price beyond a rising or
+  falling 200 EMA). On the 15-minute chart, wait until the 9, 21 and 50 EMAs are stacked in that direction, let
+  price pull back to the 21 EMA, and enter when a bar closes back across the 9 EMA. Stop 2.5 ATR away, target
+  twice the risk, London and New York hours only, at most two trades a day. Trades last hours, not minutes: on
+  gold, anything faster gave its edge to the spread.
+timeframe: 15m
+symbol: XAUUSD
+tags: [trend, pullback, intraday, research-pick]
+evidence: "Weak, own backtest only: +0.21R per trade (95% interval +0.01 to +0.41) after costs on Jan 2025 - May 2026, 215 trades, profit factor 1.15; flat in early 2026; no independent published test on gold. Treat as a hypothesis to test at minimum size."
+params:
+  trend_len: 200
+  stop_atr: 2.5
+  target_r: 2.0
+  max_per_day: 2
+labels:
+  trend_len: "1-hour trend EMA length (bars)"
+  stop_atr: "Stop distance (× ATR 14)"
+  target_r: "Target (multiple of risk)"
+  max_per_day: "Most trades per day"
+vars:
+  up: security("1h", "close > ema(close, trend_len) and ema(close, trend_len) > ema(close, trend_len)[15]")
+  dn: security("1h", "close < ema(close, trend_len) and ema(close, trend_len) < ema(close, trend_len)[15]")
+  e9: ema(close, 9)
+  e21: ema(close, 21)
+  e50: ema(close, 50)
+  stack_up: e9 > e21 and e21 > e50
+  stack_dn: e9 < e21 and e21 < e50
+  pull_up: lowest(low, 4) <= e21
+  pull_dn: highest(high, 4) >= e21
+  base: in_session("07:00-16:00", "UTC") and is_flat and trades_today < max_per_day
+long:
+  when: base and up > 0 and stack_up[4] and pull_up and crossover(close, e9)
+  sl_dist: stop_atr * atr(14)
+  tp_r: target_r
+short:
+  when: base and dn > 0 and stack_dn[4] and pull_dn and crossunder(close, e9)
+  sl_dist: stop_atr * atr(14)
+  tp_r: target_r
+plots:
+  EMA 9: ema(close, 9)
+  EMA 21: ema(close, 21)
+  EMA 50: ema(close, 50)
+  1h EMA 200: security("1h", "ema(close, 200)")
+settings:
+  initial_capital: 100
+  qty_type: lots
+  qty_value: 0.001
+  qty_step: 0.1
+  min_qty: 0.1
+  margin_percent: 20

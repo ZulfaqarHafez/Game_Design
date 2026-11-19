@@ -94,7 +94,7 @@ def test_bars_for_replay_are_exact_and_continue():
 def test_manual_review_matches_hand_calculation():
     i = at("2025-03-03")
     c, sp = DF.close.iloc[i], DF.spread.iloc[i]
-    trades = [{"side": "long", "lots": 0.2, "entry_time": int(SECS[i]), "sl": None, "tp": None,
+    trades = [{"side": "long", "lots": 0.1, "entry_time": int(SECS[i]), "sl": None, "tp": None,
                "exit_time": int(SECS[i + 5]), "exit_by": "Close"}]
     code, r = handle("manual", {"timeframe": "1h", "start_time": int(SECS[i - 3]), "end_time": int(SECS[i + 8]), "trades": trades})
     assert code == 200, r
@@ -102,9 +102,9 @@ def test_manual_review_matches_hand_calculation():
     entry = c + sp + 0.05
     exit_ = DF.close.iloc[i + 5] - 0.05
     assert t["entry_price"] == pytest.approx(entry, abs=1e-6) and t["exit_price"] == pytest.approx(exit_, abs=1e-6)
-    fees = 2 * 0.2 * 3.5
+    fees = 2 * 0.1 * 3.5
     swap = r["metrics"]["swap_paid"]
-    assert t["pnl"] == pytest.approx((exit_ - entry) * 20 - fees, abs=1e-4)
+    assert t["pnl"] == pytest.approx((exit_ - entry) * 10 - fees, abs=1e-4)
     assert r["metrics"]["net_profit"] == pytest.approx(t["pnl"] + swap, abs=1e-4)
     assert t["exit_kind"] == "close" and r["strategy"]["manual"] is True
 
@@ -125,7 +125,7 @@ def test_manual_stops_targets_and_moves():
 
 @pytest.mark.parametrize("trades,msg", [
     ([{"side": "up", "lots": 1, "entry_time": 0}], "side"),
-    ([{"side": "long", "lots": 0.001, "entry_time": 0}], "lots"),
+    ([{"side": "long", "lots": 0.0001, "entry_time": 0}], "lots"),
     ([{"side": "long", "lots": 1, "entry_time": 0, "sl": -5}], "Stop loss"),
     ([{"side": "long", "lots": 1, "entry_time": 1}], "inside the session"),
     ([], "no trades"),
@@ -205,3 +205,35 @@ def test_cli_learn_writes_a_card(tmp_path):
     bad.write_text("{}")
     p = subprocess.run([sys.executable, "-m", "goldlab", "learn", str(bad)], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode != 0 and "replay session" in p.stderr
+
+
+# ------------------------------------------------------------------ small accounts
+def test_hundred_dollar_account_trades_a_tenth_of_an_ounce():
+    """The research pick runs on $100 at 0.1 oz with Singapore's 20% gold margin."""
+    from goldlab.engine import Settings
+    assert Settings.realistic().margin_percent == 20
+    code, r = handle("backtest", {"strategy": "trend_pullback_15m", "start": "2025-01-01"})
+    assert code == 200, r
+    s, m = r["settings"], r["metrics"]
+    assert s["initial_capital"] == 100 and s["margin_percent"] == 20 and s["min_qty"] == 0.1 and s["qty_step"] == 0.1
+    assert m["total_trades"] > 150 and m["rejected_orders"] == 0
+    assert {t["lots"] for t in r["trades"]} == {0.001}
+    worst = min(t["pnl"] for t in r["trades"])
+    assert -20 < worst < 0, "even the widest stop of the volatile 2026 months cost under a fifth of the account at 0.1 oz"
+    # one whole ounce does not fit a $100 account at 20% margin: orders are cut down to what the margin allows
+    code, big = handle("backtest", {"strategy": "trend_pullback_15m", "start": "2025-01-01", "settings": {"qty_value": 0.01}})
+    assert code == 200 and big["metrics"]["total_trades"] > 0
+    for t in big["trades"][:50]:
+        assert t["lots"] < 0.01 and t["lots"] * 100 * t["entry_price"] * 0.20 <= 100 * 3, t
+
+
+def test_manual_review_accepts_a_tenth_of_an_ounce():
+    i = at("2025-03-03")
+    trades = [{"side": "long", "lots": 0.001, "entry_time": int(SECS[i]), "exit_time": int(SECS[i + 5]), "exit_by": "Close"}]
+    code, r = handle("manual", {"timeframe": "1h", "start_time": int(SECS[i - 3]), "end_time": int(SECS[i + 8]), "trades": trades,
+                                "settings": {"initial_capital": 100}})
+    assert code == 200, r
+    t = r["trades"][0]
+    entry = DF.close.iloc[i] + DF.spread.iloc[i] + 0.05
+    exit_ = DF.close.iloc[i + 5] - 0.05
+    assert t["lots"] == 0.001 and t["pnl"] == pytest.approx((exit_ - entry) * 0.1 - 2 * 0.001 * 3.5, abs=1e-5)

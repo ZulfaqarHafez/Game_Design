@@ -133,7 +133,7 @@
           <div class="rp-size">
             <label class="rp-field">Size by
               <select id="rp-sizemode"><option value="lots">Lots</option><option value="risk">Risk % of balance</option></select></label>
-            <label class="rp-field" id="rp-lots-wrap">Lots <input type="number" id="rp-lots" min="0.01" max="100" step="0.01" inputmode="decimal"></label>
+            <label class="rp-field" id="rp-lots-wrap">Lots <input type="number" id="rp-lots" min="0.001" max="100" step="any" inputmode="decimal"></label>
             <label class="rp-field" id="rp-riskpct-wrap" hidden>Risk % <input type="number" id="rp-riskpct" min="0.1" max="20" step="0.1" value="1" inputmode="decimal"></label>
             <span class="rp-computed" id="rp-computed" hidden></span>
           </div>
@@ -203,7 +203,7 @@
             <option value="lots">Fixed lots</option>
             <option value="percent_of_equity">% of equity (notional)</option>
           </select></label>
-        <label><span id="p-qtyvalue-label">Risk %</span><input type="number" id="p-qtyvalue" min="0.01" step="0.1" inputmode="decimal"></label>
+        <label><span id="p-qtyvalue-label">Risk %</span><input type="number" id="p-qtyvalue" min="0.001" step="any" inputmode="decimal"></label>
         <p class="hint tv-note" id="tv-note" hidden>Costs are off while the TradingView model is selected.</p>
         <label>Commission ($ per lot per side)<input type="number" id="p-comm" min="0" step="0.5" inputmode="decimal"></label>
         <label>Slippage (ticks of $0.01)<input type="number" id="p-slip" min="0" step="1" inputmode="numeric"></label>
@@ -270,7 +270,7 @@
     <div class="tab-body" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
       <div class="kpis" id="kpis"></div>
       <div class="empty" id="empty" hidden></div>
-      <div class="notice" id="skip-note" hidden><p id="skip-text"></p><button type="button" class="btn" id="use-min-lot">Trade 0.01 lots instead</button></div>
+      <div class="notice" id="skip-note" hidden><p id="skip-text"></p><button type="button" class="btn" id="use-min-lot">Trade the smallest size instead</button></div>
       <div class="eq-head">
         <div class="eq-legend"><span><i class="sw gold"></i>Strategy equity</span><span id="bh-key" hidden><i class="sw muted"></i>Buy &amp; hold gold</span><span><i class="sw down"></i>Drawdown (lower pane)</span></div>
         <label class="toggle"><input type="checkbox" id="bh-toggle"> Compare with buy &amp; hold</label>

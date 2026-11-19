@@ -952,8 +952,8 @@ test("replay on a phone: ticket sheet, risk-based sizing, presets, trade from th
   const t = await p.evaluate(() => ({ sl: Number(document.getElementById("rp-sl").value), tp: Number(document.getElementById("rp-tp").value), computed: document.getElementById("rp-computed").textContent, atr: GSL.replay.state._atr[GSL.replay.state.cur] }));
   assert(Math.abs(t.sl - Math.round(t.atr * 1.5 * 10) / 10) < 1e-9, "stop preset = 1.5 × ATR");
   assert(Math.abs(t.tp - Math.round(t.sl * 2 * 10) / 10) < 1e-9, "target preset = 2R");
-  const lots = Math.max(0.01, Math.floor(10000 * 0.01 / (t.sl * 100) * 100) / 100);
-  assert(t.computed.indexOf(lots.toFixed(2)) >= 0, `risk sizing shows ${lots} lots (${t.computed})`);
+  const lots = Math.max(0.001, Math.floor(10000 * 0.01 / (t.sl * 100) * 1000) / 1000);
+  assert(t.computed.indexOf(String(+lots.toFixed(3))) >= 0, `risk sizing shows ${lots} lots (${t.computed})`);
   await p.tap("#rpm-sheet-close"); assert(await p.isHidden("#rpm-sheet"), "Done closes the sheet");
   await p.tap("#rpm-buy");
   const pos = await p.evaluate(() => GSL.replay.state.pos);

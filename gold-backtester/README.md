@@ -105,6 +105,20 @@ Code: `goldlab/fundamentals.py` (data), `goldlab/analyst.py` (prompt, schema, st
 
 Not financial advice: the analyst reasons from public data and shows its working so you can disagree.
 
+## The research pick for a $100 account
+
+`strategies/trend_pullback_15m.yaml` is the method chosen by the November 2026 scalping research
+(`../reports/Gold scalping method for small accounts.md`, notes in `../research_notes/`). It trades 15-minute pullbacks
+in the direction of the 1-hour trend with a 2.5 ATR stop and a 2R target, on a $100 account at 0.1 oz (0.001 lot)
+with Singapore's 20% gold margin. In our tests (Jan 2025 - May 2026, realistic costs) it made +$39 on $100 over 215
+trades (profit factor 1.15, worst drawdown $53, worst single loss $12), and it was the only candidate that stayed
+positive after costs; opening-range breakouts, sweep-and-reclaim fades, the Asia-hours drift and 5-minute versions
+did not. The readiness checklist still says **not ready** (it lost money in the most recent 30% of the data), so
+test it in replay and on a practice account before risking money.
+
+Small accounts: the `realistic` cost preset uses 20% margin, and a card can set `qty_step: 0.1` and `min_qty: 0.1`
+to trade in 0.1 oz steps where the broker allows 0.001 lot. Replay accepts lot sizes from 0.001.
+
 ## Capturing your strategies
 
 Every strategy is a **card**: a short YAML file you can read like a trading plan.
@@ -176,7 +190,7 @@ Anything a card can't express can be written as a Python class (see `goldlab/str
 - `--preset tradingview`: no spread or costs, like a default `strategy()`. Use it to compare numbers with TradingView.
 - `--preset realistic` (default): real bid/ask spread from the data (buys on the ask, sells on the bid),
   $3.50 per lot per side commission, $0.05 slippage, overnight swap (−$40 per lot long, −$5 short, triple on Wednesday)
-  and 5% margin. Swap alone can turn a swing strategy from profit to loss.
+  and 20% margin (the Singapore retail rate for gold CFDs; 5:1). Swap alone can turn a swing strategy from profit to loss.
 - `--magnifier` resolves fills on lower-timeframe bars (TradingView's "Bar detalization").
 - `intrabar: pessimistic` assumes the stop is always hit before the target (used in validation).
 

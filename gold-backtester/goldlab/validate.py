@@ -246,8 +246,8 @@ def validate(strategy, data: pd.DataFrame, settings: Settings | None = None, jou
     # sizing: signals the account could not take
     rej = int(m.get("rejected_orders", 0) or 0)
     checks.append(_check("Account size fits the risk setting", "pass" if rej == 0 else "warn",
-                         f"{rej} signals skipped (below 0.01 lot)" if rej else "every signal could be sized",
-                         "risk % x equity must cover at least 0.01 lot at the stop distance"))
+                         f"{rej} signals skipped (too small or not enough margin)" if rej else "every signal could be sized",
+                         "the account must cover the smallest tradable size and its margin at every signal"))
     bh = m.get("buy_hold_return_pct")
     if bh is not None:
         checks.append(_check("Compared with buy & hold", "info",

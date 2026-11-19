@@ -469,6 +469,7 @@ def op_manual(req: dict) -> dict:
         st = _settings(s, req)
         st.process_orders_on_close = True    # you decided at the bar's close, so that is where the order fills
         st.pyramiding = 1
+        st.qty_step = st.min_qty = 0.1       # replay sizes in 0.001-lot (0.1 oz) steps
         res = run(s, df, st)
     except ManualError as e:
         raise ApiError(str(e)) from None

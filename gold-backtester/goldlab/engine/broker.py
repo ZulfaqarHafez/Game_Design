@@ -41,7 +41,7 @@ class Settings:
     qty_type: str = "lots"           # lots | units | cash | percent_of_equity | risk_percent
     qty_value: float = 0.1           # meaning depends on qty_type
     contract_size: float = 100.0     # ounces per lot for XAUUSD
-    qty_step: float = 1.0            # smallest tradeable units (1 oz = 0.01 lot)
+    qty_step: float = 1.0            # smallest tradeable units (1 oz = 0.01 lot; 0.1 where the broker allows 0.001 lot)
     min_qty: float = 1.0
     max_qty: float | None = None
     pyramiding: int = 1              # max open entries in one direction (TradingView 0 == 1)
@@ -59,7 +59,7 @@ class Settings:
     # behaviour ------------------------------------------------------
     process_orders_on_close: bool = False
     limit_fill_ticks: int = 0              # TradingView backtest_fill_limits_assumption
-    margin_percent: float | None = 5.0     # 5% = 1:20 leverage; None disables margin checks
+    margin_percent: float | None = 5.0     # % of notional held as margin (5% = 1:20); None disables margin checks
     close_entries_rule: str = "FIFO"
     close_open_at_end: bool = False
     intrabar: str = "tv"                   # tv | pessimistic (adverse extreme first for open positions)
@@ -75,9 +75,11 @@ class Settings:
     @classmethod
     def realistic(cls, **kw) -> "Settings":
         """Retail XAUUSD CFD-like costs (2026 research): real bid/ask spread, $7 per lot round
-        turn commission, $0.05 slippage, overnight swap -$40/lot long, -$5/lot short (x3 Wednesday)."""
+        turn commission, $0.05 slippage, overnight swap -$40/lot long, -$5/lot short (x3 Wednesday).
+        Margin is 20% (5:1), the retail rate for gold CFDs at MAS-licensed brokers in Singapore
+        (OANDA Asia Pacific, IG Asia, Phillip Nova, Nov 2026); FX and index CFDs are 5%, gold is not."""
         base = dict(spread_mode="data", commission_type="cash_per_lot", commission_value=3.5,
-                    slippage_ticks=5, margin_percent=5.0, swap_long=-40.0, swap_short=-5.0)
+                    slippage_ticks=5, margin_percent=20.0, swap_long=-40.0, swap_short=-5.0)
         base.update(kw)
         return cls(**base)
 
@@ -269,7 +271,7 @@ class Broker:
         if qty < self.s.min_qty:
             # count a signal once, even when the strategy re-sends it on consecutive bars
             if self._last_reject.get(id) != self.bar - 1:
-                self._log("rejected", order=id, reason="size below the minimum (0.01 lot); risk % too small for the stop")
+                self._log("rejected", order=id, reason="size below the smallest tradable size; risk % too small for the stop")
             self._last_reject[id] = self.bar
             self.entries.pop(id, None)
             return

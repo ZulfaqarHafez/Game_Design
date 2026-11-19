@@ -40,13 +40,15 @@
       commission: tv ? 0 : pick("commission_value"), slipTicks: tv ? 0 : pick("slippage_ticks"),
       spreadMode: tv ? "none" : pick("spread_mode"), spreadFixed: tv ? 0 : (st.spread_fixed || 0),
       swapLong: tv ? 0 : pick("swap_long"), swapShort: tv ? 0 : pick("swap_short"),
-      intrabar: tv ? "tv" : (st.intrabar || "tv"), margin: tv ? 100 : 5,
+      intrabar: tv ? "tv" : (st.intrabar || "tv"), margin: tv ? 100 : (d.margin_percent || 20),
     };
   }
   function spread(j) { return R.s.spreadMode === "data" ? (R.bars.sp[j] || 0) : R.s.spreadMode === "fixed" ? R.s.spreadFixed : 0; }
   function slip() { return R.s.slipTicks * 0.01; }
   function fee(qty) { return R.s.commission ? qty / 100 * R.s.commission : 0; }
-  function qtyOf(lots) { return Math.round(Math.floor(lots * 100 + 1e-9) * 1e8) / 1e8; }
+  // ounces for a lot size, in 0.1 oz (0.001 lot) steps, as the engine rounds them
+  function qtyOf(lots) { return Math.floor(lots * 1000 + 1e-6) / 10; }
+  function fmtLots(lots) { return String(+Number(lots).toFixed(3)); }
   function cash() { return R.s.capital + R.session.trades.reduce(function (a, t) { return a + t.pnl; }, 0) + (R.session.swap || 0); }
   function mark(P, j) { var c = R.bars.c[j]; return P.side > 0 ? c : c + spread(j); }
   function openPnl(j) { var P = R.pos; return P ? P.side * (mark(P, j) - P.entry_price) * P.qty - P.fee_entry : 0; }
@@ -89,17 +91,17 @@
     if ($("rp-sizemode").value !== "risk") return Number($("rp-lots").value);
     var pct = Number($("rp-riskpct").value), dSL = Number($("rp-sl").value);
     if (!(pct > 0) || !(dSL > 0)) return NaN;
-    return Math.max(0.01, Math.floor(cash() * pct / 100 / (dSL * 100) * 100) / 100);
+    return Math.max(0.001, Math.floor(cash() * pct / 100 / (dSL * 100) * 1000) / 1000);
   }
   function openPos(side) {
     if (R.pos) { G.toast("Close your position first."); return; }
     var j = R.cur, lots = ticketLots();
     if ($("rp-sizemode").value === "risk" && !(Number($("rp-sl").value) > 0)) { G.toast("Risk-based sizing needs a stop distance."); $("rp-sl").focus(); return; }
-    if (!(lots >= 0.01 && lots <= 100)) { G.toast("Lots must be between 0.01 and 100."); $("rp-lots").focus(); return; }
+    if (!(lots >= 0.001 && lots <= 100)) { G.toast("Lots must be between 0.001 (0.1 oz) and 100."); $("rp-lots").focus(); return; }
     var qty = qtyOf(lots), s = spread(j), dir = side === "long" ? 1 : -1;
     var price = dir > 0 ? R.bars.c[j] + s + slip() : R.bars.c[j] - slip();
     var need = qty * price * R.s.margin / 100, eq = cash();
-    if (need > eq) { G.toast("Not enough margin: " + G.money(need, 0) + " needed, balance " + G.money(eq, 0) + ". Use fewer lots."); return; }
+    if (need > eq) { G.toast("Not enough margin: " + G.money(need, 0) + " needed at " + R.s.margin + "% margin, balance " + G.money(eq, 0) + ". Use fewer lots."); return; }
     var dSL = Number($("rp-sl").value), dTP = Number($("rp-tp").value);
     var sl = $("rp-sl").value !== "" && dSL > 0 ? round2(price - dir * dSL) : null;
     var tp = $("rp-tp").value !== "" && dTP > 0 ? round2(price + dir * dTP) : null;
@@ -184,7 +186,7 @@
     var a = atrNow(); $("rp-atr").textContent = a ? "ATR(14) now " + G.num(a, 2) : "";
     var byRisk = $("rp-sizemode").value === "risk", lots = ticketLots() || 0, dSL = Number($("rp-sl").value) || 0, eq = cash();
     $("rp-lots-wrap").hidden = byRisk; $("rp-riskpct-wrap").hidden = !byRisk; $("rp-computed").hidden = !byRisk;
-    if (byRisk) $("rp-computed").textContent = lots ? "= " + lots.toFixed(2) + " lot" + (lots === 1 ? "" : "s") : "set a stop first";
+    if (byRisk) $("rp-computed").textContent = lots ? "= " + fmtLots(lots) + " lot" + (lots === 1 ? "" : "s") : "set a stop first";
     $("rp-risk").textContent = dSL > 0 && lots > 0 ? "Risk at stop ≈ " + G.money(dSL * qtyOf(lots), 0) + " (" + G.num(dSL * qtyOf(lots) / eq * 100, 1) + "% of balance)" : "No stop: risk is open-ended";
     $("rp-ticket").hidden = !!P;
     $("rp-position").hidden = !P;
@@ -212,7 +214,7 @@
     $("rpm-sell").innerHTML = "Sell <span>" + G.num(b.c[j] - slip()) + "</span>"; $("rpm-buy").innerHTML = "Buy <span>" + G.num(b.c[j] + s + slip()) + "</span>";
     $("rpm-sell").hidden = $("rpm-buy").hidden = !!P; $("rpm-close").hidden = !P;
     if (P) { var opm = openPnl(j); $("rpm-close").innerHTML = "Close <span class=\"" + G.cls(opm) + "\">" + (opm >= 0 ? "+" : "") + G.money(opm, 0) + "</span>"; }
-    $("rpm-ticket").textContent = P ? "Stop / target" : (lots ? lots.toFixed(2) + " lot · " : "") + (dSL > 0 ? "SL " + dSL : "no stop");
+    $("rpm-ticket").textContent = P ? "Stop / target" : (lots ? fmtLots(lots) + " lot · " : "") + (dSL > 0 ? "SL " + dSL : "no stop");
     $("rpm-status").innerHTML = "<span>" + new Date(b.t[j] * 1000).toISOString().slice(5, 16).replace("T", " ") + "</span><span>" + (P ? "open <b class=\"" + G.cls(openPnl(j)) + "\">" + (openPnl(j) >= 0 ? "+" : "") + G.money(openPnl(j), 0) + "</b> · " : "") + "bal <b>" + G.money(eq + (P ? openPnl(j) : 0), 0) + "</b>" + (n ? " · " + n + " trades" : "") + "</span>";
     coach();
     markers(); orderLines();

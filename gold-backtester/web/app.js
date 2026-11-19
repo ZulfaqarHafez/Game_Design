@@ -346,7 +346,7 @@
     if (skipped) {
       var last = state.result.trades.length ? state.result.trades[state.result.trades.length - 1] : null;
       $("skip-text").innerHTML = "<b>" + num(skipped, 0) + (skipped === 1 ? " signal was" : " signals were") + " skipped.</b> " +
-        (byRisk ? "With this stop distance, the position size works out below the broker minimum of 0.01 lot."
+        (byRisk ? "With this stop distance, the position size works out below the smallest tradable size (" + ((s.min_qty || 1) / 100) + " lot)."
                 : "The account didn't have enough margin for the position.") +
         (last ? " Last trade closed <span class=nowrap>" + new Date(last.exit_time * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) + "</span>." : "") +
         (byRisk ? " Raise the account size or risk %, or trade the minimum size." : " Raise the account size or lower the lots.");
@@ -878,8 +878,9 @@
     $("props").addEventListener("change", function () { syncPropsUI(); autoRun(); });
     $("reset-inputs").addEventListener("click", function () { renderInputs(); runBacktest(); });
     $("use-min-lot").addEventListener("click", function () {
-      $("p-qtytype").value = "lots"; $("p-qtyvalue").value = 0.01; syncPropsUI();
-      runBacktest().then(function () { toast("Now trading a fixed 0.01 lot. Change it in Settings → Account."); });
+      var minLot = ((state.result && state.result.settings.min_qty) || 1) / 100;
+      $("p-qtytype").value = "lots"; $("p-qtyvalue").value = minLot; syncPropsUI();
+      runBacktest().then(function () { toast("Now trading a fixed " + minLot + " lot. Change it in Settings → Account."); });
     });
     $("apply-yaml").addEventListener("click", function () {
       state.custom = $("yaml").value; $("yaml-status").textContent = "Running your edited rules…";

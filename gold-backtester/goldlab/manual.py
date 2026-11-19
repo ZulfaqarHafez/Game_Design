@@ -61,8 +61,8 @@ def clean_trades(trades) -> list[dict]:
             lots = float(t.get("lots"))
         except (TypeError, ValueError):
             raise ManualError("lots must be a number") from None
-        if not (0.01 <= lots <= 100) or not math.isfinite(lots):
-            raise ManualError("lots must be between 0.01 and 100")
+        if not math.isfinite(lots) or not (0.001 <= lots <= 100):
+            raise ManualError("lots must be between 0.001 and 100")
         try:
             entry = int(t["entry_time"])
         except (KeyError, TypeError, ValueError):
@@ -79,7 +79,7 @@ def clean_trades(trades) -> list[dict]:
             clean_mods.append({"time": int(m["time"]), "sl": _price(m.get("sl"), "Stop loss"),
                                "tp": _price(m.get("tp"), "Take profit")})
         out.append({
-            "id": f"M{k + 1}", "side": side, "lots": round(lots, 2), "entry_time": entry,
+            "id": f"M{k + 1}", "side": side, "lots": round(lots, 3), "entry_time": entry,
             "sl": _price(t.get("sl"), "Stop loss"), "tp": _price(t.get("tp"), "Take profit"),
             "exit_time": exit_t, "exit_by": str(t.get("exit_by") or "")[:12],
             "note": str(t.get("note") or "")[:300], "mods": clean_mods,
